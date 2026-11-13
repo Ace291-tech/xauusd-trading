@@ -1,0 +1,896 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+//  Orochi-Style All-In-One  ·  VWAP Suite · TPO · Key Levels · Volume Delta/OI
+//  Original code written from scratch for ZERK (XAUUSD). Not affiliated with
+//  Orochi Trading. Visual defaults mimic the public Orochi product screenshots
+//  (TradingView default palette on a dark #252525-style chart).
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Orochi-Style All-In-One (VWAP · TPO · Key Levels · Delta)", shorttitle = "OS-AIO", overlay = true, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500, max_bars_back = 5000)
+
+// ───────────────────────────── 00 · GENERAL ─────────────────────────────
+G0 = "00 · General"
+lblSizeIn = input.string("Normal", "Label size", options = ["Tiny", "Small", "Normal", "Large"], group = G0)
+mergeOn   = input.bool(true, "Merge overlapping labels ( A / B )", group = G0)
+mergePct  = input.float(8.0, "Merge distance (% of ATR 14)", minval = 0.0, step = 1.0, group = G0)
+
+// ───────────────────────────── 01 · VWAP SUITE ─────────────────────────────
+G1  = "01 · VWAP Suite"
+vwSrc     = input.source(hlc3, "Source", group = G1)
+vwLblOff  = input.int(45, "Label offset (bars)", minval = 0, maxval = 300, group = G1)
+vwNaming  = input.string("Orochi (wVAH)", "Label naming", options = ["Orochi (wVAH)", "Sigma (W +1σ)"], group = G1)
+vwUnder   = input.bool(true, "Underline tag (____wVAH)", group = G1)
+G1a = "01a · Session VWAPs (D/W/M/Q/Y)"
+showDV = input.bool(true,  "Daily",     inline = "vd", group = G1a)
+colDV  = input.color(#D1D4DC, "",       inline = "vd", group = G1a)
+dStyle = input.string("Circles", "Style", options = ["Circles", "Line"], group = G1a)
+showWV = input.bool(false, "Weekly",    inline = "vw", group = G1a)
+colWV  = input.color(#4CAF50, "",       inline = "vw", group = G1a)
+showMV = input.bool(false, "Monthly",   inline = "vm", group = G1a)
+colMV  = input.color(#FF9800, "",       inline = "vm", group = G1a)
+showQV = input.bool(false, "Quarterly", inline = "vq", group = G1a)
+colQV  = input.color(#FFC107, "",       inline = "vq", group = G1a)
+showYV = input.bool(false, "Yearly",    inline = "vy", group = G1a)
+colYV  = input.color(#F23645, "",       inline = "vy", group = G1a)
+G1b = "01b · Standard Deviation Bands"
+bandsOn    = input.bool(true, "Show SD bands", group = G1b)
+bandAnchor = input.string("Daily", "Anchored to period", options = ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"], group = G1b)
+b1On  = input.bool(true,  "±1σ", group = G1b)
+m1    = input.float(1.0, "", step = 0.1, group = G1b)
+f1On  = input.bool(true,  "fill", group = G1b)
+b2On  = input.bool(false, "±2σ", group = G1b)
+m2    = input.float(2.0, "", step = 0.1, group = G1b)
+f2On  = input.bool(false, "fill", group = G1b)
+b3On  = input.bool(false, "±3σ", group = G1b)
+m3    = input.float(3.0, "", step = 0.1, group = G1b)
+f3On  = input.bool(false, "fill", group = G1b)
+bandLineCol = input.color(color.new(#B2B5BE, 55), "Band line", group = G1b)
+bandFillCol = input.color(color.new(#FFFFFF, 92), "Band fill", group = G1b)
+G1c = "01c · HTF Labels & Previous Period"
+lblDV      = input.bool(false, "Daily labels", group = G1c)
+lblWV      = input.bool(true,  "Weekly", group = G1c)
+lblMV      = input.bool(true,  "Monthly", group = G1c)
+lblQV      = input.bool(true,  "Quarterly", group = G1c)
+lblYV      = input.bool(false, "Yearly", group = G1c)
+lblCur     = input.bool(true,  "Show current labels (VWAP/VAH/VAL)", group = G1c)
+lblCur2    = input.bool(false, "Also label ±2σ / ±3σ", group = G1c)
+lblPrev    = input.bool(true,  "Show previous-period labels (pwVWAP…)", group = G1c)
+prevLines  = input.bool(false, "Draw previous VWAP / ±1σ as levels", group = G1c)
+G1d = "01d · Rolling VWAP (from daily bars)"
+r7On   = input.bool(true,  "7D", group = G1d)
+r30On  = input.bool(false, "30D", group = G1d)
+r90On  = input.bool(false, "90D", group = G1d)
+r365On = input.bool(false, "365D", group = G1d)
+rCol   = input.color(color.new(#D1D4DC, 10), "Rolling color", group = G1d)
+
+// ───────────────────────────── 02 · TPO ─────────────────────────────
+G2 = "02 · TPO / Market Profile"
+tpoOn      = input.bool(true, "Enable TPO", group = G2)
+tpoTFin    = input.string("Daily", "Profile period", options = ["Daily", "Weekly", "Monthly"], group = G2)
+tpoMin     = input.int(30, "TPO period (minutes)", minval = 1, maxval = 240, group = G2)
+tpoRows    = input.int(60, "Price rows", minval = 10, maxval = 150, group = G2)
+tpoVA      = input.float(70.0, "Value area %", minval = 10, maxval = 99, group = G2) / 100.0
+showPrevP  = input.bool(true, "Show previous profile", group = G2)
+prevWPct   = input.int(40, "Previous profile width (% of session)", minval = 5, maxval = 100, group = G2)
+showDevP   = input.bool(true, "Show developing profile (right edge)", group = G2)
+devOff     = input.int(40, "Developing profile right offset (bars)", minval = 5, maxval = 300, group = G2)
+devW       = input.int(30, "Developing profile width (bars)", minval = 5, maxval = 200, group = G2)
+tpoLblOff  = input.int(60, "Previous-level label offset (bars)", minval = 0, maxval = 300, group = G2)
+histInCol  = input.color(color.new(#B2B5BE, 55), "Histogram (in VA)", group = G2)
+histOutCol = input.color(color.new(#B2B5BE, 72), "(outside VA)", group = G2)
+vaBoxCol   = input.color(color.new(#FFFFFF, 92), "Value area fill", group = G2)
+pocCol     = input.color(#E05252, "POC", group = G2)
+pocW       = input.int(4, "width", minval = 1, maxval = 8, group = G2)
+vaLineCol  = input.color(#9598A1, "VAH / VAL", group = G2)
+extLines   = input.bool(true, "Extend previous POC/VAH/VAL to the right", group = G2)
+singlesOn  = input.bool(true, "Single prints", group = G2)
+singleCol  = input.color(color.new(#9C27B0, 55), "", group = G2)
+singleExt  = input.bool(true, "Extend single prints until filled", group = G2)
+nPocOn     = input.bool(true, "Naked previous POCs", group = G2)
+nPocMax    = input.int(5, "max", minval = 1, maxval = 20, group = G2)
+
+// ───────────────────────────── 03 · KEY LEVELS ─────────────────────────────
+G3 = "03 · Key Levels"
+klOn      = input.bool(true, "Enable key levels", group = G3)
+klOff     = input.int(20, "Extend labels beyond price (bars)", minval = 0, maxval = 300, group = G3)
+klNakMax  = input.int(5, "Max naked opens per timeframe", minval = 0, maxval = 20, group = G3)
+G3d = "03a · Daily"
+dOpenOn = input.bool(true,  "Open", group = G3d)
+dPrevHL = input.bool(true,  "Prev H/L", group = G3d)
+dPrevMd = input.bool(true,  "Prev Mid", group = G3d)
+dPrevC  = input.bool(true,  "Prev Close", group = G3d)
+dCurHL  = input.bool(false, "Current H/L", group = G3d)
+dNaked  = input.bool(true,  "Naked Opens", group = G3d)
+dCol    = input.color(#2962FF, "Color", group = G3d)
+G3w = "03b · Weekly"
+wOpenOn = input.bool(true,  "Open", group = G3w)
+wPrevHL = input.bool(true,  "Prev H/L", group = G3w)
+wPrevMd = input.bool(true,  "Prev Mid", group = G3w)
+wPrevC  = input.bool(false, "Prev Close", group = G3w)
+wCurHL  = input.bool(false, "Current H/L", group = G3w)
+wNaked  = input.bool(true,  "Naked Opens", group = G3w)
+wCol    = input.color(#4CAF50, "Color", group = G3w)
+G3m = "03c · Monthly"
+mOpenOn = input.bool(true,  "Open", group = G3m)
+mPrevHL = input.bool(true,  "Prev H/L", group = G3m)
+mPrevMd = input.bool(false, "Prev Mid", group = G3m)
+mPrevC  = input.bool(false, "Prev Close", group = G3m)
+mCurHL  = input.bool(false, "Current H/L", group = G3m)
+mNaked  = input.bool(false, "Naked Opens", group = G3m)
+mCol    = input.color(#F23645, "Color", group = G3m)
+G3q = "03d · Quarterly"
+qOpenOn = input.bool(true,  "Open", group = G3q)
+qPrevHL = input.bool(true,  "Prev H/L", group = G3q)
+qPrevMd = input.bool(false, "Prev Mid", group = G3q)
+qPrevC  = input.bool(false, "Prev Close", group = G3q)
+qCurHL  = input.bool(false, "Current H/L", group = G3q)
+qNaked  = input.bool(true,  "Naked Opens", group = G3q)
+qCol    = input.color(#F23645, "Color", group = G3q)
+G3y = "03e · Yearly"
+yOpenOn = input.bool(true,  "Open", group = G3y)
+yPrevHL = input.bool(false, "Prev H/L", group = G3y)
+yPrevMd = input.bool(false, "Prev Mid", group = G3y)
+yPrevC  = input.bool(false, "Prev Close", group = G3y)
+yCurHL  = input.bool(true,  "Current H/L", group = G3y)
+yNaked  = input.bool(false, "Naked Opens", group = G3y)
+yCol    = input.color(#FFFFFF, "Color", group = G3y)
+G3s = "03f · Sessions (America/New_York)"
+asiaOn  = input.bool(true, "Asia",   inline = "sa", group = G3s)
+asiaSes = input.session("1800-0300", "", inline = "sa", group = G3s)
+asiaCol = input.color(#B39DDB, "", inline = "sa", group = G3s)
+lonOn   = input.bool(true, "London", inline = "sl", group = G3s)
+lonSes  = input.session("0300-0800", "", inline = "sl", group = G3s)
+lonCol  = input.color(#4DD0E1, "", inline = "sl", group = G3s)
+nyOn    = input.bool(true, "New York", inline = "sn", group = G3s)
+nySes   = input.session("0800-1700", "", inline = "sn", group = G3s)
+nyCol   = input.color(#FFB74D, "", inline = "sn", group = G3s)
+
+// ───────────────────────────── 04 · VOLUME DELTA & OI ─────────────────────────────
+G4 = "04 · Volume Delta & Open Interest"
+dOn       = input.bool(true, "Enable volume delta", group = G4)
+dMethod   = input.string("Intrabar (LTF)", "Buy/sell classification", options = ["Intrabar (LTF)", "Candle body"], group = G4, tooltip = "Intrabar: each lower-timeframe bar's volume is counted as buy (close>open) or sell (close<open); ties use the tick rule. Falls back to the candle-body estimate when no intrabar data exists.")
+ltfIn     = input.timeframe("1", "LTF timeframe", group = G4)
+zLen      = input.int(50, "Z length", minval = 5, maxval = 500, group = G4)
+t1On  = input.bool(true, ">", group = G4)
+t1    = input.float(1.5, "", step = 0.1, group = G4)
+t1u   = input.color(#FFF59D, "▲", group = G4)
+t1d   = input.color(#FAA1A4, "▼", group = G4)
+t2On  = input.bool(true, ">", group = G4)
+t2    = input.float(2.5, "", step = 0.1, group = G4)
+t2u   = input.color(#769C78, "▲", group = G4)
+t2d   = input.color(#A26768, "▼", group = G4)
+t3On  = input.bool(true, ">", group = G4)
+t3    = input.float(3.5, "", step = 0.1, group = G4)
+t3u   = input.color(#207E24, "▲", group = G4)
+t3d   = input.color(#FF0000, "▼", group = G4)
+colorBars = input.bool(true, "Color bars by delta spike tier", group = G4)
+bubOn     = input.bool(true, "Delta bubbles", group = G4)
+bubMin    = input.int(1, "min tier", minval = 1, maxval = 3, group = G4)
+bubLoc    = input.string("Max-volume price", "Bubble position", options = ["Max-volume price", "Bar high / low"], group = G4)
+bubPal    = input.string("Green / Red", "Bubble palette", options = ["Green / Red", "Tier colors"], group = G4)
+bubBuy    = input.color(#4CAF50, "Buy", group = G4)
+bubSell   = input.color(#F23645, "Sell", group = G4)
+tblOn     = input.bool(true, "Delta / CVD table", group = G4)
+tblPos    = input.string("Top Right", "Table position", options = ["Top Right", "Bottom Right", "Top Left", "Bottom Left"], group = G4)
+G4o = "04a · Open Interest (crypto perpetuals only)"
+oiOn   = input.bool(true, "Highlight OI pumps / dumps", group = G4o, tooltip = "Only active when the chart symbol is a crypto perpetual (ticker ends with .P). XAUUSD has no open-interest feed, so this stays hidden.")
+oiZThr = input.float(2.5, "OI change z-score filter", minval = 0.5, step = 0.1, group = G4o)
+oiPump = input.color(#388E3C, "Pump", group = G4o)
+oiDump = input.color(#F7525F, "Dump", group = G4o)
+
+// ───────────────────────────── 05 · SIGNALS ─────────────────────────────
+G5 = "05 · Signals (confirmed bars only)"
+sigOn    = input.bool(false, "Enable signals", group = G5)
+sigVW    = input.bool(true, "VWAP ±2σ rejection (band anchor)", group = G5)
+sigPOC   = input.bool(true, "Previous TPO POC reclaim", group = G5)
+sigDelta = input.bool(true, "Require delta confirmation", group = G5)
+
+// ═════════════════════════════ HELPERS / TYPES ═════════════════════════════
+lblSize(string s) =>
+    switch s
+        "Tiny"  => size.tiny
+        "Small" => size.small
+        "Large" => size.large
+        => size.normal
+
+clampX(int x) =>
+    math.max(x, bar_index - 4990)
+
+fmtP(float p) =>
+    str.tostring(p, format.mintick)
+
+// A level to draw on the last bar: optional line + right-edge label.
+type Lvl
+    float  price
+    string txt
+    color  col
+    int    x1
+    int    x2
+    string lstyle
+    int    lwidth
+    bool   drawLine
+    int    grp
+    int    rank
+
+addLvl(Lvl[] a, float p, string t, color c, int x1, int x2, string st, int w, bool dl, int g, int r) =>
+    if not na(p)
+        a.push(Lvl.new(p, t, c, x1, x2, st, w, dl, g, r))
+
+// Untouched prices (naked opens / naked POCs)
+type Naked
+    float[] p
+    int[]   x
+
+method addN(Naked n, float price, int x, int cap) =>
+    if not na(price) and cap > 0
+        n.p.push(price)
+        n.x.push(x)
+        if n.p.size() > cap
+            n.p.shift()
+            n.x.shift()
+
+method testN(Naked n, float hi, float lo) =>
+    int sz = n.p.size()
+    if sz > 0
+        for i = sz - 1 to 0
+            float v = n.p.get(i)
+            if v <= hi and v >= lo
+                n.p.remove(i)
+                n.x.remove(i)
+
+newNaked() =>
+    Naked.new(array.new<float>(), array.new<int>())
+
+float atr14 = ta.atr(14)
+string lblSz = lblSize(lblSizeIn)
+float vol = na(volume) or volume <= 0 ? 1.0 : volume
+
+// ═════════════════════════════ 1 · VWAP SUITE ═════════════════════════════
+type VW
+    float sPV = 0.0
+    float sPV2 = 0.0
+    float sV = 0.0
+    float vw = na
+    float sd = na
+    float pvw = na
+    float psd = na
+    int   start = 0
+
+method update(VW s, bool isNew, float src, float v) =>
+    if isNew
+        s.pvw := s.vw
+        s.psd := s.sd
+        s.start := bar_index
+        s.sPV := 0.0
+        s.sPV2 := 0.0
+        s.sV := 0.0
+    s.sPV := s.sPV + src * v
+    s.sPV2 := s.sPV2 + src * src * v
+    s.sV := s.sV + v
+    s.vw := s.sV > 0 ? s.sPV / s.sV : src
+    s.sd := s.sV > 0 ? math.sqrt(math.max(s.sPV2 / s.sV - s.vw * s.vw, 0.0)) : 0.0
+    s
+
+bool newD = timeframe.change("D")
+bool newW = timeframe.change("W")
+bool newM = timeframe.change("M")
+bool newQ = timeframe.change("3M")
+bool newY = timeframe.change("12M")
+
+var VW vD = VW.new()
+var VW vW = VW.new()
+var VW vM = VW.new()
+var VW vQ = VW.new()
+var VW vY = VW.new()
+vD.update(newD, vwSrc, vol)
+vW.update(newW, vwSrc, vol)
+vM.update(newM, vwSrc, vol)
+vQ.update(newQ, vwSrc, vol)
+vY.update(newY, vwSrc, vol)
+
+float dVW = vD.vw
+float wVW = vW.vw
+float mVW = vM.vw
+float qVW = vQ.vw
+float yVW = vY.vw
+
+plot(showDV and not newD ? dVW : na, "Daily VWAP", colDV, 1, dStyle == "Circles" ? plot.style_circles : plot.style_linebr)
+plot(showWV and not newW ? wVW : na, "Weekly VWAP", colWV, 1, plot.style_linebr)
+plot(showMV and not newM ? mVW : na, "Monthly VWAP", colMV, 1, plot.style_linebr)
+plot(showQV and not newQ ? qVW : na, "Quarterly VWAP", colQV, 1, plot.style_linebr)
+plot(showYV and not newY ? yVW : na, "Yearly VWAP", colYV, 1, plot.style_linebr)
+
+// Standard-deviation bands for one selected anchor (like the original "Anchored to Period")
+float bVW = switch bandAnchor
+    "Weekly"    => wVW
+    "Monthly"   => mVW
+    "Quarterly" => qVW
+    "Yearly"    => yVW
+    => dVW
+float bSD = switch bandAnchor
+    "Weekly"    => vW.sd
+    "Monthly"   => vM.sd
+    "Quarterly" => vQ.sd
+    "Yearly"    => vY.sd
+    => vD.sd
+bool bNew = switch bandAnchor
+    "Weekly"    => newW
+    "Monthly"   => newM
+    "Quarterly" => newQ
+    "Yearly"    => newY
+    => newD
+bool bShow = bandsOn and not bNew
+float bU1 = bVW + bSD * m1
+float bL1 = bVW - bSD * m1
+float bU2 = bVW + bSD * m2
+float bL2 = bVW - bSD * m2
+float bU3 = bVW + bSD * m3
+float bL3 = bVW - bSD * m3
+pU1 = plot(bShow and b1On ? bU1 : na, "Band +1σ", bandLineCol, 1, plot.style_linebr)
+pL1 = plot(bShow and b1On ? bL1 : na, "Band -1σ", bandLineCol, 1, plot.style_linebr)
+pU2 = plot(bShow and b2On ? bU2 : na, "Band +2σ", bandLineCol, 1, plot.style_linebr)
+pL2 = plot(bShow and b2On ? bL2 : na, "Band -2σ", bandLineCol, 1, plot.style_linebr)
+pU3 = plot(bShow and b3On ? bU3 : na, "Band +3σ", bandLineCol, 1, plot.style_linebr)
+pL3 = plot(bShow and b3On ? bL3 : na, "Band -3σ", bandLineCol, 1, plot.style_linebr)
+fill(pU1, pL1, f1On ? bandFillCol : na, "Fill ±1σ")
+fill(pU2, pU1, f2On ? bandFillCol : na, "Fill +2σ")
+fill(pL1, pL2, f2On ? bandFillCol : na, "Fill -2σ")
+fill(pU3, pU2, f3On ? bandFillCol : na, "Fill +3σ")
+fill(pL2, pL3, f3On ? bandFillCol : na, "Fill -3σ")
+
+// Rolling VWAPs from completed daily bars (non-repainting: [1] + lookahead_on)
+rollVW(int n) =>
+    float sv = math.sum(nz(volume), n)
+    float spv = math.sum(hlc3 * nz(volume), n)
+    sv > 0 ? spv / sv : na
+[r7, r30, r90, r365] = request.security(syminfo.tickerid, "D", [rollVW(7)[1], rollVW(30)[1], rollVW(90)[1], rollVW(365)[1]], lookahead = barmerge.lookahead_on)
+plot(r7On ? r7 : na, "Rolling 7D VWAP", rCol, 1)
+plot(r30On ? r30 : na, "Rolling 30D VWAP", rCol, 1)
+plot(r90On ? r90 : na, "Rolling 90D VWAP", rCol, 1)
+plot(r365On ? r365 : na, "Rolling 365D VWAP", rCol, 1)
+
+// ═════════════════════════════ 2 · TPO ═════════════════════════════
+string tpoTF = switch tpoTFin
+    "Weekly"  => "W"
+    "Monthly" => "M"
+    => "D"
+string tpoPrevTag = tpoTFin == "Weekly" ? "PW" : tpoTFin == "Monthly" ? "PM" : "PD"
+string tpoCurTag  = tpoTFin == "Weekly" ? "CW" : tpoTFin == "Monthly" ? "CM" : "CD"
+bool tpoActive = tpoOn and timeframe.in_seconds(timeframe.period) < timeframe.in_seconds(tpoTF)
+
+// Counts TPO periods per price row; returns histogram + POC/VA row indices.
+tpoCalc(float[] hs, float[] ls, int rows, float vaPct) =>
+    float[] cnt = array.new<float>(rows, 0.0)
+    float lo = ls.size() > 0 ? ls.min() : na
+    float hi = hs.size() > 0 ? hs.max() : na
+    float step = na(hi) or na(lo) ? na : math.max((hi - lo) / rows, syminfo.mintick)
+    int pocI = 0
+    int vahI = 0
+    int valI = 0
+    if not na(step)
+        for i = 0 to hs.size() - 1
+            int b0 = math.max(0, math.min(rows - 1, int(math.floor((ls.get(i) - lo) / step))))
+            int b1 = math.max(0, math.min(rows - 1, int(math.floor((hs.get(i) - lo) / step))))
+            for b = b0 to b1
+                cnt.set(b, cnt.get(b) + 1.0)
+        float mx = cnt.max()
+        // POC = highest count; ties resolved toward the profile middle
+        float bestDist = 1e10
+        for b = 0 to rows - 1
+            if cnt.get(b) == mx
+                float dist = math.abs(b - (rows - 1) / 2.0)
+                if dist < bestDist
+                    bestDist := dist
+                    pocI := b
+        float total = cnt.sum()
+        float acc = cnt.get(pocI)
+        int up = pocI
+        int dn = pocI
+        while acc < total * vaPct and (up < rows - 1 or dn > 0)
+            float nu = up < rows - 1 ? cnt.get(up + 1) : -1.0
+            float nd = dn > 0 ? cnt.get(dn - 1) : -1.0
+            if nu >= nd
+                up += 1
+                acc += nu
+            else
+                dn -= 1
+                acc += nd
+        vahI := up
+        valI := dn
+    [cnt, lo, step, pocI, vahI, valI]
+
+var float[] curH = array.new<float>()
+var float[] curL = array.new<float>()
+var float blkH = na
+var float blkL = na
+var int lastBlk = na
+var int curStart = 0
+var float[] prvCnt = array.new<float>()
+var float prvLo = na
+var float prvStep = na
+var int prvPocI = 0
+var int prvVahI = 0
+var int prvValI = 0
+var int prvStart = na
+var int prvEnd = na
+var float prvPOC = na
+var float prvVAH = na
+var float prvVAL = na
+var float postH = na
+var float postL = na
+var Naked nPOC = newNaked()
+
+int blkId = int(math.floor(time / (tpoMin * 60000.0)))
+bool tpoNew = timeframe.change(tpoTF)
+
+if tpoActive
+    if tpoNew
+        if not na(blkH)
+            curH.push(blkH)
+            curL.push(blkL)
+        if curH.size() > 0
+            [c_, lo_, st_, pI, hI, lI] = tpoCalc(curH, curL, tpoRows, tpoVA)
+            prvCnt := c_
+            prvLo := lo_
+            prvStep := st_
+            prvPocI := pI
+            prvVahI := hI
+            prvValI := lI
+            prvStart := curStart
+            prvEnd := bar_index - 1
+            prvPOC := lo_ + st_ * (pI + 0.5)
+            prvVAH := lo_ + st_ * (hI + 1)
+            prvVAL := lo_ + st_ * lI
+            nPOC.addN(prvPOC, prvEnd, nPocMax + 1)
+        curH.clear()
+        curL.clear()
+        curStart := bar_index
+        blkH := high
+        blkL := low
+        lastBlk := blkId
+        postH := high
+        postL := low
+    else
+        if na(lastBlk) or blkId != lastBlk
+            if not na(blkH)
+                curH.push(blkH)
+                curL.push(blkL)
+            blkH := high
+            blkL := low
+            lastBlk := blkId
+        else
+            blkH := math.max(blkH, high)
+            blkL := math.min(blkL, low)
+        postH := na(postH) ? high : math.max(postH, high)
+        postL := na(postL) ? low : math.min(postL, low)
+    nPOC.testN(high, low)
+
+// ═════════════════════════════ 3 · KEY LEVELS ═════════════════════════════
+[dO, dPH, dPL, dPC] = request.security(syminfo.tickerid, "D", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+[wO, wPH, wPL, wPC] = request.security(syminfo.tickerid, "W", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+[mO, mPH, mPL, mPC] = request.security(syminfo.tickerid, "M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+[qO, qPH, qPL, qPC] = request.security(syminfo.tickerid, "3M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+[yO, yPH, yPL, yPC] = request.security(syminfo.tickerid, "12M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+
+type KL
+    float op = na
+    float cH = na
+    float cL = na
+    int   start = 0
+    int   pstart = 0
+
+method roll(KL k, bool isNew, float htfOpen, Naked nk, int cap) =>
+    if isNew
+        if not na(k.op)
+            nk.addN(k.op, k.start, cap)
+        k.pstart := k.start
+        k.start := bar_index
+        k.cH := high
+        k.cL := low
+    else
+        k.cH := na(k.cH) ? high : math.max(k.cH, high)
+        k.cL := na(k.cL) ? low : math.min(k.cL, low)
+    k.op := htfOpen
+    nk.testN(high, low)
+    k
+
+var KL kD = KL.new()
+var KL kW = KL.new()
+var KL kM = KL.new()
+var KL kQ = KL.new()
+var KL kY = KL.new()
+var Naked nkD = newNaked()
+var Naked nkW = newNaked()
+var Naked nkM = newNaked()
+var Naked nkQ = newNaked()
+var Naked nkY = newNaked()
+kD.roll(newD, dO, nkD, klNakMax)
+kW.roll(newW, wO, nkW, klNakMax)
+kM.roll(newM, mO, nkM, klNakMax)
+kQ.roll(newQ, qO, nkQ, klNakMax)
+kY.roll(newY, yO, nkY, klNakMax)
+
+// Sessions (New York time)
+type Sess
+    float h = na
+    float l = na
+    int   start = 0
+
+method track(Sess s, bool inS, bool inPrev) =>
+    if inS and not inPrev
+        s.h := high
+        s.l := low
+        s.start := bar_index
+    else if inS
+        s.h := math.max(s.h, high)
+        s.l := math.min(s.l, low)
+    s
+
+bool inAsia = not na(time(timeframe.period, asiaSes, "America/New_York"))
+bool inLon  = not na(time(timeframe.period, lonSes, "America/New_York"))
+bool inNY   = not na(time(timeframe.period, nySes, "America/New_York"))
+var Sess sA = Sess.new()
+var Sess sL = Sess.new()
+var Sess sN = Sess.new()
+var bool wasAsia = false
+var bool wasLon = false
+var bool wasNY = false
+sA.track(inAsia, wasAsia)
+sL.track(inLon, wasLon)
+sN.track(inNY, wasNY)
+wasAsia := inAsia
+wasLon := inLon
+wasNY := inNY
+
+// ═════════════════════════════ 4 · VOLUME DELTA ═════════════════════════════
+bool ltfLower = timeframe.in_seconds(ltfIn) <= timeframe.in_seconds(timeframe.period)
+string ltfUse = ltfLower ? ltfIn : timeframe.period
+[lO, lC, lH, lL, lV] = request.security_lower_tf(syminfo.tickerid, ltfUse, [open, close, high, low, volume])
+
+float buyV = 0.0
+float sellV = 0.0
+float maxV = -1.0
+float maxP = hlc3
+int nLtf = lV.size()
+bool useLtf = dMethod == "Intrabar (LTF)" and nLtf > 0
+var float prevLtfC = na
+if dOn
+    if useLtf
+        for i = 0 to nLtf - 1
+            float v = nz(lV.get(i))
+            float o = lO.get(i)
+            float c = lC.get(i)
+            if c > o
+                buyV += v
+            else if c < o
+                sellV += v
+            else if not na(prevLtfC) and c > prevLtfC
+                buyV += v
+            else if not na(prevLtfC) and c < prevLtfC
+                sellV += v
+            else
+                buyV += v * 0.5
+                sellV += v * 0.5
+            prevLtfC := c
+            if v > maxV
+                maxV := v
+                maxP := (lH.get(i) + lL.get(i) + c) / 3.0
+    else
+        float rng = high - low
+        float vv = nz(volume)
+        float frac = rng > 0 ? (close - open) / rng : 0.0
+        buyV := vv * (1.0 + frac) / 2.0
+        sellV := vv * (1.0 - frac) / 2.0
+        maxP := hlc3
+        prevLtfC := close
+
+float delta = buyV - sellV
+float dSd = ta.stdev(delta, zLen)
+float dz = dSd > 0 ? delta / dSd : 0.0
+float az = math.abs(dz)
+int tier = t3On and az >= t3 ? 3 : t2On and az >= t2 ? 2 : t1On and az >= t1 ? 1 : 0
+bool isBuy = delta > 0
+
+var float cvd = 0.0
+if newD
+    cvd := 0.0
+cvd += delta
+
+color tierCol = tier == 3 ? (isBuy ? t3u : t3d) : tier == 2 ? (isBuy ? t2u : t2d) : tier == 1 ? (isBuy ? t1u : t1d) : na
+barcolor(dOn and colorBars and tier > 0 ? tierCol : na, title = "Delta spike bar color")
+
+float bubP = bubLoc == "Max-volume price" ? maxP : (isBuy ? low : high)
+bool bubBase = dOn and bubOn and tier >= bubMin
+bool tierPal = bubPal == "Tier colors"
+plotshape(bubBase and isBuy and tier == 1 ? bubP : na, "Buy bubble T1", shape.circle, location.absolute, tierPal ? t1u : color.new(bubBuy, 45), size = size.tiny)
+plotshape(bubBase and isBuy and tier == 2 ? bubP : na, "Buy bubble T2", shape.circle, location.absolute, tierPal ? t2u : color.new(bubBuy, 20), size = size.small)
+plotshape(bubBase and isBuy and tier == 3 ? bubP : na, "Buy bubble T3", shape.circle, location.absolute, tierPal ? t3u : bubBuy, size = size.normal)
+plotshape(bubBase and not isBuy and tier == 1 ? bubP : na, "Sell bubble T1", shape.circle, location.absolute, tierPal ? t1d : color.new(bubSell, 45), size = size.tiny)
+plotshape(bubBase and not isBuy and tier == 2 ? bubP : na, "Sell bubble T2", shape.circle, location.absolute, tierPal ? t2d : color.new(bubSell, 20), size = size.small)
+plotshape(bubBase and not isBuy and tier == 3 ? bubP : na, "Sell bubble T3", shape.circle, location.absolute, tierPal ? t3d : bubSell, size = size.normal)
+
+// Open interest: only for crypto perpetuals; ignore_invalid_symbol keeps it safe elsewhere
+bool isPerp = syminfo.type == "crypto" and str.endswith(syminfo.ticker, ".P")
+string oiSym = isPerp ? syminfo.prefix + ":" + syminfo.ticker + "_OI" : syminfo.tickerid
+float oiRaw = request.security(oiSym, timeframe.period, close, ignore_invalid_symbol = true)
+float oi = isPerp ? oiRaw : na
+float oiChg = oi - oi[1]
+float oiSd = ta.stdev(oiChg, 50)
+float oiZ = oiSd > 0 ? oiChg / oiSd : na
+bool oiUp = oiOn and isPerp and not na(oiZ) and oiZ >= oiZThr
+bool oiDn = oiOn and isPerp and not na(oiZ) and oiZ <= -oiZThr
+plotshape(oiUp, "OI pump", shape.circle, location.abovebar, oiPump, size = size.tiny)
+plotshape(oiDn, "OI dump", shape.circle, location.abovebar, oiDump, size = size.tiny)
+
+// ═════════════════════════════ 5 · SIGNALS ═════════════════════════════
+bool vwShort = sigOn and sigVW and barstate.isconfirmed and high >= bU2 and close < bU2 and (not sigDelta or delta < 0)
+bool vwLong  = sigOn and sigVW and barstate.isconfirmed and low <= bL2 and close > bL2 and (not sigDelta or delta > 0)
+bool pocXUp = ta.crossover(close, prvPOC)
+bool pocXDn = ta.crossunder(close, prvPOC)
+bool pocLong  = sigOn and sigPOC and tpoActive and barstate.isconfirmed and pocXUp and (not sigDelta or delta > 0)
+bool pocShort = sigOn and sigPOC and tpoActive and barstate.isconfirmed and pocXDn and (not sigDelta or delta < 0)
+plotshape(vwLong, "VWAP -2σ rejection long", shape.labelup, location.belowbar, color.new(#4CAF50, 0), text = "VW", textcolor = color.white, size = size.tiny)
+plotshape(vwShort, "VWAP +2σ rejection short", shape.labeldown, location.abovebar, color.new(#F23645, 0), text = "VW", textcolor = color.white, size = size.tiny)
+plotshape(pocLong, "POC reclaim long", shape.labelup, location.belowbar, color.new(#2962FF, 0), text = "POC", textcolor = color.white, size = size.tiny)
+plotshape(pocShort, "POC loss short", shape.labeldown, location.abovebar, color.new(#FF9800, 0), text = "POC", textcolor = color.white, size = size.tiny)
+alertcondition(vwLong, "VWAP -2σ rejection (long)", "OS-AIO: VWAP -2σ rejection with buy delta on {{ticker}} at {{close}}")
+alertcondition(vwShort, "VWAP +2σ rejection (short)", "OS-AIO: VWAP +2σ rejection with sell delta on {{ticker}} at {{close}}")
+alertcondition(pocLong, "TPO POC reclaim (long)", "OS-AIO: close reclaimed previous TPO POC on {{ticker}} at {{close}}")
+alertcondition(pocShort, "TPO POC lost (short)", "OS-AIO: close lost previous TPO POC on {{ticker}} at {{close}}")
+
+// ═════════════════════════════ DRAWING (last bar only) ═════════════════════════════
+var line[]  gLines  = array.new<line>()
+var label[] gLabels = array.new<label>()
+var box[]   gBoxes  = array.new<box>()
+
+vwTag(string p, string kind, bool prev) =>
+    // p = "D","W","M","Q","Y"; kind = "VWAP","VAH","VAL","+2","-2","+3","-3"
+    string base = ""
+    if vwNaming == "Orochi (wVAH)"
+        string k2 = kind == "VWAP" or kind == "VAH" or kind == "VAL" ? kind : kind + "σ"
+        base := (prev ? "p" : "") + str.lower(p) + k2
+    else
+        string k3 = kind == "VWAP" ? "VWAP" : kind == "VAH" ? "+1σ" : kind == "VAL" ? "-1σ" : kind + "σ"
+        base := (prev ? "p" : "") + p + " " + k3
+    (vwUnder ? "__________" : "") + base
+
+addVW(Lvl[] a, VW s, string p, color c, int rank) =>
+    int x2 = bar_index + vwLblOff
+    if lblCur
+        addLvl(a, s.vw, vwTag(p, "VWAP", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
+        addLvl(a, s.vw + s.sd * m1, vwTag(p, "VAH", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
+        addLvl(a, s.vw - s.sd * m1, vwTag(p, "VAL", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
+        if lblCur2
+            addLvl(a, s.vw + s.sd * m2, vwTag(p, "+2", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
+            addLvl(a, s.vw - s.sd * m2, vwTag(p, "-2", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
+            addLvl(a, s.vw + s.sd * m3, vwTag(p, "+3", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
+            addLvl(a, s.vw - s.sd * m3, vwTag(p, "-3", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
+    if lblPrev and not na(s.pvw)
+        addLvl(a, s.pvw, vwTag(p, "VWAP", true), c, s.start, x2, line.style_solid, 1, prevLines, 1, rank)
+        addLvl(a, s.pvw + s.psd * m1, vwTag(p, "VAH", true), c, s.start, x2, line.style_dotted, 1, prevLines, 1, rank)
+        addLvl(a, s.pvw - s.psd * m1, vwTag(p, "VAL", true), c, s.start, x2, line.style_dotted, 1, prevLines, 1, rank)
+
+addKL(Lvl[] a, KL k, float pH, float pL, float pC, string nm, string pnm, color c, bool oOn, bool hlOn, bool mdOn, bool cOn, bool curOn, int rank) =>
+    int x2 = bar_index + klOff
+    if oOn
+        addLvl(a, k.op, nm + " Open", c, k.start, x2, line.style_solid, 1, true, 0, rank)
+    if hlOn
+        addLvl(a, pH, "Prev " + pnm + " High", c, k.pstart, x2, line.style_solid, 1, true, 0, rank)
+        addLvl(a, pL, "Prev " + pnm + " Low", c, k.pstart, x2, line.style_solid, 1, true, 0, rank)
+    if mdOn and not na(pH) and not na(pL)
+        addLvl(a, (pH + pL) / 2.0, "Prev " + pnm + " Mid", c, k.pstart, x2, line.style_dotted, 1, true, 0, rank)
+    if cOn
+        addLvl(a, pC, "Prev " + pnm + " Close", c, k.pstart, x2, line.style_dashed, 1, true, 0, rank)
+    if curOn
+        addLvl(a, k.cH, nm + " High", c, k.start, x2, line.style_solid, 1, true, 0, rank)
+        addLvl(a, k.cL, nm + " Low", c, k.start, x2, line.style_solid, 1, true, 0, rank)
+
+addNaked(Lvl[] a, Naked n, string nm, color c, bool on, int rank) =>
+    if on and n.p.size() > 0
+        for i = 0 to n.p.size() - 1
+            addLvl(a, n.p.get(i), "Naked " + nm, c, n.x.get(i), bar_index + klOff, line.style_solid, 1, true, 0, rank)
+
+addSess(Lvl[] a, Sess s, string nm, color c, bool on) =>
+    if on and not na(s.h)
+        addLvl(a, s.h, nm + " High", c, s.start, bar_index + klOff, line.style_dashed, 1, true, 0, 5)
+        addLvl(a, s.l, nm + " Low", c, s.start, bar_index + klOff, line.style_dashed, 1, true, 0, 5)
+
+// Draw labels of one group, merging nearby prices into "A / B" (colour of the highest-timeframe item)
+drawGroup(Lvl[] a, int g, float tol, string lstyle, string talign) =>
+    float[] ps = array.new<float>()
+    int[] ix = array.new<int>()
+    label[] out = array.new<label>()
+    if a.size() > 0
+        for i = 0 to a.size() - 1
+            if a.get(i).grp == g
+                ps.push(a.get(i).price)
+                ix.push(i)
+    if ps.size() > 0
+        int[] ord = ps.sort_indices(order.ascending)
+        float curP = na
+        string curT = ""
+        color curC = na
+        int curR = 99
+        int curX = bar_index
+        for k = 0 to ord.size() - 1
+            Lvl L = a.get(ix.get(ord.get(k)))
+            if not na(curP) and math.abs(L.price - curP) <= tol
+                curT := curT + " / " + L.txt
+                if L.rank < curR
+                    curR := L.rank
+                    curC := L.col
+            else
+                if not na(curP)
+                    out.push(label.new(curX, curP, curT, xloc.bar_index, yloc.price, color.new(color.black, 100), lstyle, curC, lblSz, talign))
+                curP := L.price
+                curT := L.txt
+                curC := L.col
+                curR := L.rank
+                curX := L.x2
+        if not na(curP)
+            out.push(label.new(curX, curP, curT, xloc.bar_index, yloc.price, color.new(color.black, 100), lstyle, curC, lblSz, talign))
+    out
+
+if barstate.islast
+    for l in gLines
+        l.delete()
+    gLines.clear()
+    for lb in gLabels
+        lb.delete()
+    gLabels.clear()
+    for bx in gBoxes
+        bx.delete()
+    gBoxes.clear()
+
+    Lvl[] lv = array.new<Lvl>()
+    float tol = mergeOn ? nz(atr14) * mergePct / 100.0 : -1.0
+
+    // VWAP labels (group 1)
+    if lblDV
+        addVW(lv, vD, "D", colDV, 4)
+    if lblWV
+        addVW(lv, vW, "W", colWV, 3)
+    if lblMV
+        addVW(lv, vM, "M", colMV, 2)
+    if lblQV
+        addVW(lv, vQ, "Q", colQV, 1)
+    if lblYV
+        addVW(lv, vY, "Y", colYV, 0)
+
+    // Key levels (group 0)
+    if klOn
+        addKL(lv, kY, yPH, yPL, yPC, "Yearly", "Year", yCol, yOpenOn, yPrevHL, yPrevMd, yPrevC, yCurHL, 0)
+        addKL(lv, kQ, qPH, qPL, qPC, "Quarterly", "Quarter", qCol, qOpenOn, qPrevHL, qPrevMd, qPrevC, qCurHL, 1)
+        addKL(lv, kM, mPH, mPL, mPC, "Monthly", "Month", mCol, mOpenOn, mPrevHL, mPrevMd, mPrevC, mCurHL, 2)
+        addKL(lv, kW, wPH, wPL, wPC, "Weekly", "Week", wCol, wOpenOn, wPrevHL, wPrevMd, wPrevC, wCurHL, 3)
+        addKL(lv, kD, dPH, dPL, dPC, "Daily", "Day", dCol, dOpenOn, dPrevHL, dPrevMd, dPrevC, dCurHL, 4)
+        addNaked(lv, nkY, "Yearly", yCol, yNaked, 0)
+        addNaked(lv, nkQ, "Quarterly", qCol, qNaked, 1)
+        addNaked(lv, nkM, "Monthly", mCol, mNaked, 2)
+        addNaked(lv, nkW, "Weekly", wCol, wNaked, 3)
+        addNaked(lv, nkD, "Daily", dCol, dNaked, 4)
+        addSess(lv, sA, "Asia", asiaCol, asiaOn)
+        addSess(lv, sL, "London", lonCol, lonOn)
+        addSess(lv, sN, "NY", nyCol, nyOn)
+
+    // Rolling VWAP tags
+    int rx = bar_index + 3
+    if r7On and not na(r7)
+        gLabels.push(label.new(rx, r7, "7D", xloc.bar_index, yloc.price, color.new(color.black, 100), label.style_label_left, rCol, lblSz))
+    if r30On and not na(r30)
+        gLabels.push(label.new(rx, r30, "30D", xloc.bar_index, yloc.price, color.new(color.black, 100), label.style_label_left, rCol, lblSz))
+    if r90On and not na(r90)
+        gLabels.push(label.new(rx, r90, "90D", xloc.bar_index, yloc.price, color.new(color.black, 100), label.style_label_left, rCol, lblSz))
+    if r365On and not na(r365)
+        gLabels.push(label.new(rx, r365, "365D", xloc.bar_index, yloc.price, color.new(color.black, 100), label.style_label_left, rCol, lblSz))
+
+    // ── TPO drawing (group 2) ──
+    if tpoActive
+        // previous profile
+        if showPrevP and prvCnt.size() > 0 and not na(prvStart)
+            int x0 = clampX(prvStart)
+            int x1e = math.max(prvEnd, x0 + 1)
+            float mx = prvCnt.max()
+            int maxW = math.max(1, int(math.round((x1e - x0) * prevWPct / 100.0)))
+            gBoxes.push(box.new(x0, prvVAH, x1e, prvVAL, border_color = color.new(color.black, 100), bgcolor = vaBoxCol))
+            for b = 0 to prvCnt.size() - 1
+                float c = prvCnt.get(b)
+                if c > 0
+                    int w = math.max(1, int(math.round(c / mx * maxW)))
+                    color hc = b >= prvValI and b <= prvVahI ? histInCol : histOutCol
+                    gBoxes.push(box.new(x0, prvLo + prvStep * (b + 1), x0 + w, prvLo + prvStep * b, border_color = color.new(color.black, 100), bgcolor = hc))
+            // single prints (rows visited by exactly one TPO period), merged into zones
+            if singlesOn
+                int b = 1
+                while b < prvCnt.size() - 1
+                    if prvCnt.get(b) == 1.0
+                        int e = b
+                        while e + 1 < prvCnt.size() - 1 and prvCnt.get(e + 1) == 1.0
+                            e += 1
+                        float zt = prvLo + prvStep * (e + 1)
+                        float zb = prvLo + prvStep * b
+                        bool filled = not na(postH) and postH >= zt and postL <= zb
+                        int xr = singleExt and not filled ? bar_index : x1e
+                        gBoxes.push(box.new(x0, zt, xr, zb, border_color = color.new(color.black, 100), bgcolor = singleCol))
+                        b := e + 1
+                    else
+                        b += 1
+            // in-session POC / VA lines
+            gLines.push(line.new(x0, prvPOC, x1e, prvPOC, xloc.bar_index, extend.none, color.new(pocCol, 30), line.style_solid, pocW))
+            gLines.push(line.new(x0, prvVAH, x1e, prvVAH, xloc.bar_index, extend.none, vaLineCol, line.style_solid, 1))
+            gLines.push(line.new(x0, prvVAL, x1e, prvVAL, xloc.bar_index, extend.none, vaLineCol, line.style_solid, 1))
+        // previous levels extended right + labels
+        if not na(prvPOC)
+            int xl = bar_index + tpoLblOff
+            int xs = na(prvEnd) ? bar_index : prvEnd
+            addLvl(lv, prvVAH, tpoPrevTag + " VAH (" + fmtP(prvVAH) + ")", vaLineCol, xs, xl, line.style_dotted, 1, extLines, 2, 1)
+            addLvl(lv, prvPOC, tpoPrevTag + " POC (" + fmtP(prvPOC) + ")", pocCol, xs, xl, line.style_dotted, 1, extLines, 2, 0)
+            addLvl(lv, prvVAL, tpoPrevTag + " VAL (" + fmtP(prvVAL) + ")", vaLineCol, xs, xl, line.style_dotted, 1, extLines, 2, 1)
+        // naked older POCs (skip the most recent one: it is already the previous POC)
+        if nPocOn and nPOC.p.size() > 0
+            for i = 0 to nPOC.p.size() - 1
+                float np = nPOC.p.get(i)
+                if np != prvPOC
+                    addLvl(lv, np, "nPOC (" + fmtP(np) + ")", pocCol, nPOC.x.get(i), bar_index + tpoLblOff, line.style_dotted, 1, true, 2, 0)
+        // developing profile at the right edge
+        if showDevP
+            float[] hs = curH.copy()
+            float[] ls = curL.copy()
+            if not na(blkH)
+                hs.push(blkH)
+                ls.push(blkL)
+            if hs.size() > 0
+                [dc, dlo, dst, dpI, dhI, dlI] = tpoCalc(hs, ls, tpoRows, tpoVA)
+                float dmx = dc.max()
+                int xR = bar_index + devOff
+                for b = 0 to dc.size() - 1
+                    float c = dc.get(b)
+                    if c > 0
+                        int w = math.max(1, int(math.round(c / dmx * devW)))
+                        color hc = b >= dlI and b <= dhI ? histInCol : histOutCol
+                        gBoxes.push(box.new(xR - w, dlo + dst * (b + 1), xR, dlo + dst * b, border_color = color.new(color.black, 100), bgcolor = hc))
+                float dPOC = dlo + dst * (dpI + 0.5)
+                float dVAH = dlo + dst * (dhI + 1)
+                float dVAL = dlo + dst * dlI
+                gLines.push(line.new(xR - devW, dPOC, xR, dPOC, xloc.bar_index, extend.none, pocCol, line.style_solid, 2))
+                gLines.push(line.new(xR - devW, dVAH, xR, dVAH, xloc.bar_index, extend.none, vaLineCol, line.style_solid, 1))
+                gLines.push(line.new(xR - devW, dVAL, xR, dVAL, xloc.bar_index, extend.none, vaLineCol, line.style_solid, 1))
+                addLvl(lv, dVAH, tpoCurTag + " VAH (" + fmtP(dVAH) + ")", vaLineCol, xR, xR + 2, line.style_solid, 1, false, 3, 1)
+                addLvl(lv, dPOC, tpoCurTag + " POC (" + fmtP(dPOC) + ")", pocCol, xR, xR + 2, line.style_solid, 1, false, 3, 0)
+                addLvl(lv, dVAL, tpoCurTag + " VAL (" + fmtP(dVAL) + ")", vaLineCol, xR, xR + 2, line.style_solid, 1, false, 3, 1)
+
+    // lines for all collected levels
+    if lv.size() > 0
+        for i = 0 to lv.size() - 1
+            Lvl L = lv.get(i)
+            if L.drawLine
+                gLines.push(line.new(clampX(L.x1), L.price, L.x2, L.price, xloc.bar_index, extend.none, L.col, L.lstyle, L.lwidth))
+
+    // labels per group (merged)
+    gLabels.concat(drawGroup(lv, 0, tol, label.style_label_down, text.align_center))
+    gLabels.concat(drawGroup(lv, 1, tol, label.style_label_left, text.align_left))
+    gLabels.concat(drawGroup(lv, 2, tol, label.style_label_left, text.align_left))
+    gLabels.concat(drawGroup(lv, 3, tol, label.style_label_left, text.align_left))
+
+// ═════════════════════════════ DELTA TABLE ═════════════════════════════
+tblPosition(string s) =>
+    switch s
+        "Bottom Right" => position.bottom_right
+        "Top Left"     => position.top_left
+        "Bottom Left"  => position.bottom_left
+        => position.top_right
+
+var table dTbl = table.new(tblPosition(tblPos), 2, 5, bgcolor = color.new(#1E1E1E, 10), border_color = color.new(#434651, 0), border_width = 1, frame_color = color.new(#434651, 0), frame_width = 1)
+if barstate.islast and tblOn and dOn
+    color txt = #D1D4DC
+    color dc = delta >= 0 ? bubBuy : bubSell
+    color cc = cvd >= 0 ? bubBuy : bubSell
+    table.cell(dTbl, 0, 0, "Δ source", text_color = txt, text_size = size.small, text_halign = text.align_left)
+    table.cell(dTbl, 1, 0, useLtf ? "LTF " + ltfUse : "Candle", text_color = txt, text_size = size.small)
+    table.cell(dTbl, 0, 1, "Bar Δ", text_color = txt, text_size = size.small, text_halign = text.align_left)
+    table.cell(dTbl, 1, 1, str.tostring(delta, format.volume) + "  z " + str.tostring(dz, "#.0"), text_color = dc, text_size = size.small)
+    table.cell(dTbl, 0, 2, "CVD (day)", text_color = txt, text_size = size.small, text_halign = text.align_left)
+    table.cell(dTbl, 1, 2, str.tostring(cvd, format.volume), text_color = cc, text_size = size.small)
+    table.cell(dTbl, 0, 3, "Buy / Sell", text_color = txt, text_size = size.small, text_halign = text.align_left)
+    table.cell(dTbl, 1, 3, str.tostring(buyV, format.volume) + " / " + str.tostring(sellV, format.volume), text_color = txt, text_size = size.small)
+    table.cell(dTbl, 0, 4, "Open interest", text_color = txt, text_size = size.small, text_halign = text.align_left)
+    table.cell(dTbl, 1, 4, isPerp and not na(oi) ? str.tostring(oi, format.volume) : "n/a", text_color = txt, text_size = size.small)
