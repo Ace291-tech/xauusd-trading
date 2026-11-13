@@ -1,0 +1,319 @@
+//@version=5
+// ════════════════════════════════════════════════════════════════
+//  XAUUSD ПРО ИНДИКАТОР
+//  Footprint + Volume Profile + Доугийн онол + Фибоначчи + Дохио
+//  Зөвлөмж: 1м, 5м, 15м чарт дээр ашиглана
+// ════════════════════════════════════════════════════════════════
+indicator("XAUUSD Footprint + VP + Dow + Fib", shorttitle="XAU Pro", overlay=true, max_labels_count=500, max_lines_count=100, max_boxes_count=20)
+
+// ───────────── ТОХИРГОО ─────────────
+G1 = "① Volume Profile"
+vpTF   = input.timeframe("D", "Profile-ийн хугацаа", group=G1, tooltip="D бол өмнөх өдрийн POC, VAH, VAL")
+vaPct  = input.float(70, "Value Area %", minval=10, maxval=100, group=G1) / 100
+nBins  = input.int(50, "Үнийн мөрийн тоо", minval=10, maxval=200, group=G1)
+
+G2 = "② Доугийн онол, Дэмжлэг/Эсэргүүцэл"
+pivLen = input.int(5, "Swing-ийн урт", minval=2, group=G2, tooltip="Swing high/low тодорхойлох лааны тоо")
+showBg = input.bool(false, "Трэндийг дэвсгэр өнгөөр харуулах", group=G2)
+
+G3 = "③ Фибоначчи"
+fibA    = input.float(0.5,   "Бүсийн эхлэл", step=0.001, group=G3)
+fibB    = input.float(0.618, "Бүсийн төгсгөл", step=0.001, group=G3)
+showFib = input.bool(true, "Fib бүсийг харуулах", group=G3)
+
+G4 = "④ Footprint"
+ltfTF     = input.timeframe("1", "Intrabar хугацаа", group=G4, tooltip="Лаа бүрийн доторх buy/sell-ийг энэ хугацааны лаагаар тооцно")
+showFP    = input.bool(true, "Лаа бүрийн доор дельта харуулах", group=G4)
+fpBars    = input.int(20, "Хэдэн лаан дээр харуулах", minval=1, maxval=150, group=G4)
+fpRows    = input.int(8, "Footprint хүснэгтийн мөр", minval=3, maxval=15, group=G4)
+imbRatio  = input.float(3.0, "Imbalance харьцаа (x дахин)", minval=1.5, step=0.5, group=G4)
+colorBars = input.bool(true, "Лааг дельтаар будах", group=G4)
+
+G5 = "⑤ Дохио"
+minScore = input.int(2, "Хамгийн бага давхцал (1-3)", minval=1, maxval=3, group=G5, tooltip="VP түвшин, S/R, Fib бүс гурвын хэд нь давхцах ёстой")
+tolATR   = input.float(0.3, "Түвшинд хүрэх хүлцэл (ATR)", step=0.05, group=G5)
+useDelta = input.bool(true, "Дельта баталгаажуулалт шаардах", group=G5)
+
+G6 = "⑥ Харагдах байдал"
+showDash = input.bool(true, "Мэдээллийн самбар", group=G6)
+showFPT  = input.bool(true, "Сүүлийн лааны footprint хүснэгт", group=G6)
+
+// ───────────── ӨНГӨ ─────────────
+cBuy  = color.new(#26A69A, 0)
+cSell = color.new(#EF5350, 0)
+cPOC  = color.new(#FFD54F, 0)
+cVA   = color.new(#42A5F5, 0)
+cFib  = color.new(#FF9800, 0)
+cSR   = color.new(#B0BEC5, 0)
+cBg   = color.new(#131722, 5)
+cTxt  = color.new(#D1D4DC, 0)
+
+fmtP(x) => na(x) ? "—" : str.tostring(x, format.mintick)
+fmtV(x) => str.tostring(x, format.volume)
+fmtD(x) => (x >= 0 ? "+" : "") + str.tostring(x, format.volume)
+
+// ═════════════ 1. VOLUME PROFILE (POC / VAH / VAL) ═════════════
+var float[] dH = array.new_float()
+var float[] dL = array.new_float()
+var float[] dV = array.new_float()
+var float poc = na
+var float vah = na
+var float val = na
+
+newDay = ta.change(time(vpTF)) != 0
+
+if newDay and array.size(dH) > 0
+    float hi = array.max(dH)
+    float lo = array.min(dL)
+    float step = (hi - lo) / nBins
+    if step > 0
+        float[] prof = array.new_float(nBins, 0.0)
+        for i = 0 to array.size(dH) - 1
+            int b0 = math.max(0, math.min(nBins - 1, int((array.get(dL, i) - lo) / step)))
+            int b1 = math.max(0, math.min(nBins - 1, int((array.get(dH, i) - lo) / step)))
+            float share = array.get(dV, i) / (b1 - b0 + 1)
+            for b = b0 to b1
+                array.set(prof, b, array.get(prof, b) + share)
+        float total = array.sum(prof)
+        if total > 0
+            int pocIdx = array.indexof(prof, array.max(prof))
+            float acc = array.get(prof, pocIdx)
+            int up = pocIdx
+            int dn = pocIdx
+            while acc < total * vaPct and (up < nBins - 1 or dn > 0)
+                float vUp = up < nBins - 1 ? array.get(prof, up + 1) : -1.0
+                float vDn = dn > 0 ? array.get(prof, dn - 1) : -1.0
+                if vUp >= vDn
+                    up += 1
+                    acc += vUp
+                else
+                    dn -= 1
+                    acc += vDn
+            poc := lo + step * (pocIdx + 0.5)
+            vah := lo + step * (up + 1)
+            val := lo + step * dn
+
+if newDay
+    array.clear(dH)
+    array.clear(dL)
+    array.clear(dV)
+array.push(dH, high)
+array.push(dL, low)
+array.push(dV, nz(volume))
+
+// ═════════════ 2. ДОУГИЙН ОНОЛ (зах зээлийн бүтэц) ═════════════
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+var float lastH = na
+var float prevH = na
+var float lastL = na
+var float prevL = na
+var int lastHBar = na
+var int lastLBar = na
+var int trend = 0   // 1 = өсөх, -1 = буурах, 0 = хажуу
+
+if not na(ph)
+    prevH := lastH
+    lastH := ph
+    lastHBar := bar_index - pivLen
+if not na(pl)
+    prevL := lastL
+    lastL := pl
+    lastLBar := bar_index - pivLen
+if (not na(ph) or not na(pl)) and not na(prevH) and not na(prevL)
+    trend := lastH > prevH and lastL > prevL ? 1 : lastH < prevH and lastL < prevL ? -1 : 0
+// Трэнд эвдэрвэл хуучин бүтцийг устгана, шинэ HH/HL эсвэл LH/LL гарч байж л трэнд тогтоно
+if trend == 1 and close < lastL
+    trend := 0
+    prevH := na
+    prevL := na
+if trend == -1 and close > lastH
+    trend := 0
+    prevH := na
+    prevL := na
+
+// ═════════════ 3. ФИБОНАЧЧИ (сүүлийн импульс хөл) ═════════════
+upLow  = lastHBar > lastLBar ? lastL : prevL
+dnHigh = lastLBar > lastHBar ? lastH : prevH
+fibUpA = lastH - (lastH - upLow) * fibA
+fibUpB = lastH - (lastH - upLow) * fibB
+fibDnA = lastL + (dnHigh - lastL) * fibA
+fibDnB = lastL + (dnHigh - lastL) * fibB
+zTop = trend == 1 ? math.max(fibUpA, fibUpB) : trend == -1 ? math.max(fibDnA, fibDnB) : na
+zBot = trend == 1 ? math.min(fibUpA, fibUpB) : trend == -1 ? math.min(fibDnA, fibDnB) : na
+
+// ═════════════ 4. FOOTPRINT (лааны доторх buy / sell) ═════════════
+[fO, fC, fV] = request.security_lower_tf(syminfo.tickerid, ltfTF, [open, close, volume])
+float buyV = 0.0
+float sellV = 0.0
+int fN = array.size(fC)
+if fN > 0
+    for i = 0 to fN - 1
+        float o = array.get(fO, i)
+        float c = array.get(fC, i)
+        float v = nz(array.get(fV, i))
+        if c > o
+            buyV += v
+        else if c < o
+            sellV += v
+        else
+            buyV += v / 2
+            sellV += v / 2
+else
+    float r = high - low
+    buyV := r > 0 ? nz(volume) * (close - low) / r : nz(volume) / 2
+    sellV := nz(volume) - buyV
+delta = buyV - sellV
+totV  = buyV + sellV
+buyPct = totV > 0 ? buyV / totV * 100 : 50.0
+
+var float dayDelta = 0.0
+dayDelta := newDay ? delta : dayDelta + delta
+
+// Лаа бүрийн доор дельта (дээр нь хулгана аваачихад дэлгэрэнгүй)
+var label[] fpLabels = array.new<label>()
+if showFP and barstate.isconfirmed
+    string tip = "Buy: " + fmtV(buyV) + "\nSell: " + fmtV(sellV) + "\nДельта: " + fmtD(delta) + "\nBuy эзлэх хувь: " + str.tostring(buyPct, "#") + "%"
+    color tc = delta >= 0 ? cBuy : cSell
+    array.push(fpLabels, label.new(bar_index, low, fmtD(delta), yloc=yloc.belowbar, style=label.style_none, textcolor=tc, size=size.tiny, tooltip=tip))
+    if array.size(fpLabels) > fpBars
+        label.delete(array.shift(fpLabels))
+
+barcolor(colorBars ? (buyPct >= 65 ? cBuy : buyPct <= 35 ? cSell : na) : na)
+
+// ═════════════ 5. ДОХИО ═════════════
+tol = ta.atr(14) * tolATR
+touchBuy(lvl)  => not na(lvl) and low <= lvl + tol and close > lvl
+touchSell(lvl) => not na(lvl) and high >= lvl - tol and close < lvl
+
+bVP  = touchBuy(val) or touchBuy(poc)
+bSR  = touchBuy(lastL)
+bFib = trend == 1 and not na(zTop) and low <= zTop and close >= zBot
+sVP  = touchSell(vah) or touchSell(poc)
+sSR  = touchSell(lastH)
+sFib = trend == -1 and not na(zTop) and high >= zBot and close <= zTop
+
+int buyScore  = (bVP ? 1 : 0) + (bSR ? 1 : 0) + (bFib ? 1 : 0)
+int sellScore = (sVP ? 1 : 0) + (sSR ? 1 : 0) + (sFib ? 1 : 0)
+
+buyRaw  = barstate.isconfirmed and trend == 1  and buyScore  >= minScore and close > open and (not useDelta or delta > 0)
+sellRaw = barstate.isconfirmed and trend == -1 and sellScore >= minScore and close < open and (not useDelta or delta < 0)
+buySig  = buyRaw and not buyRaw[1]
+sellSig = sellRaw and not sellRaw[1]
+
+var string lastSig = "—"
+atrV = ta.atr(14)
+if buySig
+    string why = "Шалтгаан:" + (bVP ? "\n• VP түвшин (VAL/POC)" : "") + (bSR ? "\n• Дэмжлэг" : "") + (bFib ? "\n• Fib бүс" : "") + "\n• Дельта " + fmtD(delta)
+    label.new(bar_index, low - atrV * 1.2, "BUY", style=label.style_label_up, color=cBuy, textcolor=color.white, size=size.small, tooltip=why)
+    lastSig := "BUY  " + fmtP(close)
+if sellSig
+    string why = "Шалтгаан:" + (sVP ? "\n• VP түвшин (VAH/POC)" : "") + (sSR ? "\n• Эсэргүүцэл" : "") + (sFib ? "\n• Fib бүс" : "") + "\n• Дельта " + fmtD(delta)
+    label.new(bar_index, high + atrV * 1.2, "SELL", style=label.style_label_down, color=cSell, textcolor=color.white, size=size.small, tooltip=why)
+    lastSig := "SELL  " + fmtP(close)
+
+alertcondition(buySig,  "BUY дохио",  "XAUUSD BUY дохио: {{close}}")
+alertcondition(sellSig, "SELL дохио", "XAUUSD SELL дохио: {{close}}")
+
+// ═════════════ 6. ЗУРАГ ═════════════
+plot(newDay ? na : poc, "POC", cPOC, 2, plot.style_linebr)
+plot(newDay ? na : vah, "VAH", color.new(cVA, 20), 1, plot.style_linebr)
+plot(newDay ? na : val, "VAL", color.new(cVA, 20), 1, plot.style_linebr)
+bgcolor(showBg ? (trend == 1 ? color.new(cBuy, 93) : trend == -1 ? color.new(cSell, 93) : na) : na)
+
+var label lbPOC = na
+var label lbVAH = na
+var label lbVAL = na
+var line  lnR = na
+var line  lnS = na
+var label lbR = na
+var label lbS = na
+var box   bxFib = na
+
+if barstate.islast
+    label.delete(lbPOC)
+    label.delete(lbVAH)
+    label.delete(lbVAL)
+    line.delete(lnR)
+    line.delete(lnS)
+    label.delete(lbR)
+    label.delete(lbS)
+    box.delete(bxFib)
+    int xr = bar_index + 4
+    if not na(poc)
+        lbPOC := label.new(xr, poc, "POC  " + fmtP(poc), style=label.style_label_left, color=color.new(cPOC, 15), textcolor=color.black, size=size.small)
+        lbVAH := label.new(xr, vah, "VAH  " + fmtP(vah), style=label.style_label_left, color=color.new(cVA, 15), textcolor=color.white, size=size.small)
+        lbVAL := label.new(xr, val, "VAL  " + fmtP(val), style=label.style_label_left, color=color.new(cVA, 15), textcolor=color.white, size=size.small)
+    if not na(lastH)
+        lnR := line.new(lastHBar, lastH, bar_index + 4, lastH, color=cSR, style=line.style_dashed)
+        lbR := label.new(lastHBar, lastH, "Эсэргүүцэл", style=label.style_label_down, color=color.new(cSR, 70), textcolor=cTxt, size=size.tiny)
+    if not na(lastL)
+        lnS := line.new(lastLBar, lastL, bar_index + 4, lastL, color=cSR, style=line.style_dashed)
+        lbS := label.new(lastLBar, lastL, "Дэмжлэг", style=label.style_label_up, color=color.new(cSR, 70), textcolor=cTxt, size=size.tiny)
+    if showFib and not na(zTop) and not na(zBot)
+        bxFib := box.new(math.min(lastHBar, lastLBar), zTop, bar_index + 4, zBot, border_color=color.new(cFib, 40), bgcolor=color.new(cFib, 88), text="Fib " + str.tostring(fibA * 100, "#.#") + "–" + str.tostring(fibB * 100, "#.#") + "%", text_color=cFib, text_size=size.small, text_halign=text.align_right)
+
+// ═════════════ 7. МЭДЭЭЛЛИЙН САМБАР ═════════════
+var table dash = table.new(position.top_right, 2, 9, bgcolor=cBg, border_color=color.new(#2A2E39, 0), border_width=1, frame_color=color.new(#2A2E39, 0), frame_width=1)
+if showDash and barstate.islast
+    string tTxt = trend == 1 ? "ӨСӨХ ▲" : trend == -1 ? "БУУРАХ ▼" : "ХАЖУУ ↔"
+    color  tCol = trend == 1 ? cBuy : trend == -1 ? cSell : cTxt
+    table.cell(dash, 0, 0, "XAUUSD", text_color=cPOC, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 0, "САМБАР", text_color=cPOC, text_size=size.small)
+    table.cell(dash, 0, 1, "Трэнд (Доу)", text_color=cTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 1, tTxt, text_color=tCol, text_size=size.small)
+    table.cell(dash, 0, 2, "POC", text_color=cTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 2, fmtP(poc), text_color=cPOC, text_size=size.small)
+    table.cell(dash, 0, 3, "VAH / VAL", text_color=cTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 3, fmtP(vah) + " / " + fmtP(val), text_color=cVA, text_size=size.small)
+    table.cell(dash, 0, 4, "Эсэргүүцэл / Дэмжлэг", text_color=cTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 4, fmtP(lastH) + " / " + fmtP(lastL), text_color=cSR, text_size=size.small)
+    table.cell(dash, 0, 5, "Лааны Buy / Sell", text_color=cTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 5, fmtV(buyV) + " / " + fmtV(sellV), text_color=cTxt, text_size=size.small)
+    table.cell(dash, 0, 6, "Лааны дельта", text_color=cTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 6, fmtD(delta), text_color=delta >= 0 ? cBuy : cSell, text_size=size.small)
+    table.cell(dash, 0, 7, "Өдрийн нийт дельта", text_color=cTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 7, fmtD(dayDelta), text_color=dayDelta >= 0 ? cBuy : cSell, text_size=size.small)
+    table.cell(dash, 0, 8, "Сүүлийн дохио", text_color=cTxt, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 8, lastSig, text_color=str.startswith(lastSig, "BUY") ? cBuy : str.startswith(lastSig, "SELL") ? cSell : cTxt, text_size=size.small)
+
+// ═════════════ 8. СҮҮЛИЙН ЛААНЫ FOOTPRINT ХҮСНЭГТ ═════════════
+//  Үнийн мөр бүрт Sell | Buy эзлэхүүн. Шар = лааны POC, тод ногоон/улаан = imbalance
+var table fpt = table.new(position.bottom_right, 3, 17, bgcolor=cBg, border_color=color.new(#2A2E39, 0), border_width=1, frame_color=color.new(#2A2E39, 0), frame_width=1)
+if showFPT and barstate.islast and fN > 0
+    table.clear(fpt, 0, 0, 2, 16)
+    float rowStep = (high - low) / fpRows
+    float[] rB = array.new_float(fpRows, 0.0)
+    float[] rS = array.new_float(fpRows, 0.0)
+    for i = 0 to fN - 1
+        float o = array.get(fO, i)
+        float c = array.get(fC, i)
+        float v = nz(array.get(fV, i))
+        int k = rowStep > 0 ? math.max(0, math.min(fpRows - 1, int((c - low) / rowStep))) : 0
+        if c >= o
+            array.set(rB, k, array.get(rB, k) + v)
+        else
+            array.set(rS, k, array.get(rS, k) + v)
+    int pocRow = 0
+    float best = -1.0
+    for k = 0 to fpRows - 1
+        float t = array.get(rB, k) + array.get(rS, k)
+        if t > best
+            best := t
+            pocRow := k
+    table.cell(fpt, 0, 0, "Үнэ", text_color=cTxt, text_size=size.tiny)
+    table.cell(fpt, 1, 0, "Sell", text_color=cSell, text_size=size.tiny)
+    table.cell(fpt, 2, 0, "Buy", text_color=cBuy, text_size=size.tiny)
+    for j = 0 to fpRows - 1
+        int k = fpRows - 1 - j
+        float b = array.get(rB, k)
+        float s = array.get(rS, k)
+        bool imbB = b > 0 and b >= s * imbRatio
+        bool imbS = s > 0 and s >= b * imbRatio
+        color rowBg = k == pocRow ? color.new(cPOC, 75) : cBg
+        table.cell(fpt, 0, j + 1, fmtP(low + rowStep * (k + 0.5)), text_color=k == pocRow ? cPOC : cTxt, bgcolor=rowBg, text_size=size.tiny)
+        table.cell(fpt, 1, j + 1, fmtV(s), text_color=imbS ? color.white : cSell, bgcolor=imbS ? color.new(cSell, 30) : rowBg, text_size=size.tiny)
+        table.cell(fpt, 2, j + 1, fmtV(b), text_color=imbB ? color.white : cBuy, bgcolor=imbB ? color.new(cBuy, 30) : rowBg, text_size=size.tiny)
+    table.cell(fpt, 0, fpRows + 1, "Δ", text_color=cTxt, text_size=size.tiny)
+    table.cell(fpt, 1, fpRows + 1, fmtD(delta), text_color=delta >= 0 ? cBuy : cSell, text_size=size.tiny)
+    table.cell(fpt, 2, fpRows + 1, str.tostring(buyPct, "#") + "% buy", text_color=cTxt, text_size=size.tiny)
