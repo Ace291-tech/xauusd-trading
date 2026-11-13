@@ -1,0 +1,135 @@
+//@version=5
+// XAU Bred #2 - strategy bred by algo-breeder (genetic search on Dukascopy XAUUSD 2019-2026)
+// H1 long only | Donchian(84) close breakout | filters: trend SMA(54), ATR14/ATRavg100 >= 1.20, hours 12:00+22h (broker), H4-close confirm | exits: SL 3.2xATR, TP 9.3xATR, trail 3.6xATR, time exit 21 bars, exit on opposite signal
+// Backtest in python (costs + swap): IS PF 1.37 / OOS PF 1.62.
+// For DEMO testing / research only. Past results do not guarantee future profit. Not financial advice.
+// Use on XAUUSD 1h chart (e.g. OANDA:XAUUSD). Hours below are MT5 server time (New York + 7h).
+// Note: TradingView cannot charge overnight swap; python results include it.
+strategy("XAU Bred #2 (1h)", overlay=true, pyramiding=0, initial_capital=10000,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_contract, commission_value=0.25,
+     process_orders_on_close=false, calc_on_every_tick=false)
+
+direction  = input.int(0,   "Direction 0=long 1=short 2=both", minval=0, maxval=2)
+entryType  = input.int(1, "Entry 0=EMA cross 1=Donchian 2=RSI rev 3=Bollinger rev", minval=0, maxval=3)
+emaFast    = input.int(25,  "EMA fast")
+emaSlow    = input.int(110,  "EMA slow")
+donLen     = input.int(84,   "Donchian length")
+rsiLen     = input.int(13,  "RSI length")
+rsiLow     = input.float(24.0, "RSI low (short at 100-low)")
+bbLen      = input.int(18,   "Bollinger length")
+bbDev      = input.float(2.40, "Bollinger deviation")
+trendLen   = input.int(54, "Trend SMA (0=off)")
+volMin     = input.float(1.20, "ATR14 / SMA(ATR14,100) min (0=off)")
+sessStart  = input.int(12,    "Session start hour (server time)")
+sessHours  = input.int(22,  "Session length hours (24=all)")
+h4Confirm  = input.bool(true, "Last closed H4 candle confirms direction")
+slATR      = input.float(3.20,  "Stop loss x ATR14")
+tpATR      = input.float(9.30,  "Take profit x ATR14")
+trailATR   = input.float(3.60, "Trailing stop x ATR14 (0=off)")
+maxBars    = input.int(21,  "Time exit after N bars (0=off)")
+exitOpp    = input.bool(true, "Exit on opposite signal")
+qtyOz      = input.float(100, "Position size (oz; 100 = 1 MT5 lot)")
+
+if timeframe.period != "60"
+    runtime.error("Apply this strategy to a 1h chart")
+
+srvHour(t) => (hour(t, "America/New_York") + 7) % 24
+
+atr = ta.atr(14)
+// --- last CLOSED H4 candle direction, H4 boundaries in server time
+var float h4o = na
+var int lastH4Dir = 0
+int bucket = math.floor(srvHour(time) / 4)
+if na(h4o) or bucket != math.floor(srvHour(time[1]) / 4) or dayofmonth(time) != dayofmonth(time[1])
+    h4o := open
+int h4dir = 0
+if timeframe.period == "240"
+    h4dir := close > open ? 1 : close < open ? -1 : 0
+else
+    if srvHour(time_close) % 4 == 0
+        lastH4Dir := close > h4o ? 1 : close < h4o ? -1 : 0
+    h4dir := lastH4Dir
+
+// --- raw signals on bar close
+ef = ta.ema(close, emaFast)
+es = ta.ema(close, emaSlow)
+hh = ta.highest(high, donLen)[1]
+ll = ta.lowest(low, donLen)[1]
+r  = ta.rsi(close, rsiLen)
+mid = ta.sma(close, bbLen)
+sd  = ta.stdev(close, bbLen)
+lob = mid - bbDev * sd
+upb = mid + bbDev * sd
+int raw = 0
+if entryType == 0
+    raw := ef > es and ef[1] <= es[1] ? 1 : ef < es and ef[1] >= es[1] ? -1 : 0
+else if entryType == 1
+    raw := close > hh ? 1 : close < ll ? -1 : 0
+else if entryType == 2
+    raw := r[1] < rsiLow and r >= rsiLow ? 1 : r[1] > 100 - rsiLow and r <= 100 - rsiLow ? -1 : 0
+else
+    raw := close[1] < lob[1] and close >= lob ? 1 : close[1] > upb[1] and close <= upb ? -1 : 0
+
+int sig = raw
+if sig == 1 and direction == 1
+    sig := 0
+if sig == -1 and direction == 0
+    sig := 0
+trendMA = ta.sma(close, math.max(trendLen, 1))
+atrAvg  = ta.sma(atr, 100)
+if sig != 0 and trendLen > 0
+    if (sig == 1 and not (close > trendMA)) or (sig == -1 and not (close < trendMA))
+        sig := 0
+if sig != 0 and volMin > 0 and not (atr >= volMin * atrAvg)
+    sig := 0
+if sig != 0 and sessHours < 24 and ((srvHour(time_close) - sessStart + 24) % 24) >= sessHours
+    sig := 0
+if sig != 0 and h4Confirm and h4dir != sig
+    sig := 0
+
+// --- position management (mirrors the python engine)
+var float stopLvl = na
+var float tpLvl = na
+var float sigATR = na
+pos = strategy.position_size > 0 ? 1 : strategy.position_size < 0 ? -1 : 0
+bool pendExit = false
+if pos != 0
+    held = bar_index - strategy.opentrades.entry_bar_index(0) + 1
+    if na(stopLvl)  // first bar in the trade: anchor to the actual fill price
+        ep = strategy.position_avg_price
+        stopLvl := pos == 1 ? ep - slATR * sigATR : ep + slATR * sigATR
+        tpLvl   := pos == 1 ? ep + tpATR * sigATR : ep - tpATR * sigATR
+    if trailATR > 0
+        stopLvl := pos == 1 ? math.max(stopLvl, close - trailATR * atr) : math.min(stopLvl, close + trailATR * atr)
+    if (maxBars > 0 and held >= maxBars) or (exitOpp and raw == -pos)
+        pendExit := true
+        if not (sig != 0 and sig == -pos)   // a reversal entry below closes the old trade itself
+            strategy.close_all(comment="time/opp exit")
+else
+    stopLvl := na
+    tpLvl := na
+
+if sig != 0 and (pos == 0 or pendExit)
+    sigATR := atr
+    if sig == 1
+        strategy.entry("L", strategy.long, qty=qtyOz)
+        strategy.exit("XL", "L", stop=close - slATR * atr, limit=close + tpATR * atr)
+    else
+        strategy.entry("S", strategy.short, qty=qtyOz)
+        strategy.exit("XS", "S", stop=close + slATR * atr, limit=close - tpATR * atr)
+    stopLvl := na
+    tpLvl := na
+else if pos == 1 and not pendExit
+    strategy.exit("XL", "L", stop=stopLvl, limit=tpLvl)
+else if pos == -1 and not pendExit
+    strategy.exit("XS", "S", stop=stopLvl, limit=tpLvl)
+
+plot(entryType == 0 ? ef : na, "EMA fast", color.orange)
+plot(entryType == 0 ? es : na, "EMA slow", color.blue)
+plot(entryType == 1 ? hh : na, "Donchian high", color.teal)
+plot(entryType == 1 ? ll : na, "Donchian low", color.teal)
+plot(entryType == 3 ? upb : na, "BB upper", color.gray)
+plot(entryType == 3 ? lob : na, "BB lower", color.gray)
+plot(stopLvl, "Stop", color.red, style=plot.style_linebr)
+plot(tpLvl, "Target", color.green, style=plot.style_linebr)

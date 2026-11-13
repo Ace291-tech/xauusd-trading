@@ -4,6 +4,7 @@
 
 - **TradingView Pine Script v5 индикатор** (`tradingview/XAU_Footprint_Pro.pine`): footprint-ийн ойролцоо тооцоо, volume profile (**POC / VAH / VAL**), Доугийн онолын трэнд, Фибоначчийн бүс, buy/sell дохио.
 - **MT5 Expert Advisor** (`mt5/VP_Dow_EA.mq5`): volume profile болон Доугийн трэнд ашиглан оролт хийнэ. Суулгалт, компайл, Strategy Tester болон тохиргооны тайлбар `mt5/README_mn.md` файлд байна.
+- **Algo-breeder стратеги** (`tradingview/strategies/`, `mt5/experts/`): XAU Bred #1, #2, #3. Товч тайлбар `tradingview/strategies/README.md`, судалгааны тайлан `research/algo-breeder/REPORT.md`.
 
 ## Хавтасны бүтэц
 
@@ -11,11 +12,22 @@
 .
 ├── README.md
 ├── tradingview/
-│   └── XAU_Footprint_Pro.pine    # Pine v5 индикатор
-└── mt5/
-    ├── VP_Dow_EA.mq5             # Expert Advisor
-    └── README_mn.md              # EA-ийн монгол тайлбар
+│   ├── XAU_Footprint_Pro.pine    # Pine v5 индикатор
+│   └── strategies/               # XAU Bred #1–#3 (Pine v5)
+├── mt5/
+│   ├── VP_Dow_EA.mq5             # Expert Advisor
+│   ├── experts/                  # XAU Bred #1–#3 (MQL5)
+│   └── README_mn.md              # EA-ийн монгол тайлбар
+└── research/
+    └── algo-breeder/REPORT.md    # breeder-ийн судалгааны тайлан
 ```
+
+## XAU Bred стратеги (#1, #2, #3)
+
+- **#1** ба **#2** нь **XAUUSD H1** дээр ажиллана.
+- **#3** нь **XAUUSD H4** дээр ажиллана.
+- MQL5 EA-уудыг MetaEditor дээр **0 errors**-той компайлсан.
+- Зөвхөн **демо / тест**. Санхүүгийн зөвлөгөө биш.
 
 ## TradingView дээр индикатор нэмэх
 
