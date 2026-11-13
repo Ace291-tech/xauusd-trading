@@ -1,224 +1,509 @@
 //@version=6
 // ═══════════════════════════════════════════════════════════════════════════
-//  Orochi-Style All-In-One  ·  VWAP Suite · TPO · Key Levels · Volume Delta/OI
-//  Original code written from scratch for ZERK (XAUUSD). Not affiliated with
-//  Orochi Trading. Visual defaults mimic the public Orochi product screenshots
-//  (TradingView default palette on a dark #252525-style chart).
+//  Orochi-Style All-In-One  ·  VWAP · TPO · Volume Profile · Key Levels · Delta
+//  XAUUSD-д зориулсан эх код. Orochi Trading-тай холбоогүй.
+//  Цаг бүрт өөр пресет. Шугамыг баруун ирмэгт богино зурна.
+//  XAUUSD volume = тик хэмжээ (үнийн өөрчлөлтийн тоо).
+//  Зургийг сүүлийн баар дээр устгаад дахин зурна (500 лимит).
 // ═══════════════════════════════════════════════════════════════════════════
 indicator("Orochi-Style All-In-One (VWAP · TPO · Key Levels · Delta)", shorttitle = "OS-AIO", overlay = true, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500, max_bars_back = 5000)
 
-// ───────────────────────────── 00 · GENERAL ─────────────────────────────
-G0 = "00 · General"
-lblSizeIn = input.string("Normal", "Label size", options = ["Tiny", "Small", "Normal", "Large"], group = G0)
-mergeOn   = input.bool(true, "Merge overlapping labels ( A / B )", group = G0)
-mergePct  = input.float(8.0, "Merge distance (% of ATR 14)", minval = 0.0, step = 1.0, group = G0)
+// ───────────────────────── 00 · Ерөнхий ─────────────────────────
+G0 = "00 · General · Ерөнхий"
+themeIn = input.string("Dark", "Theme", options = ["Dark", "Light"], group = G0, tooltip = "Бараан эсвэл цайвар загвар. Шошгоны дэвсгэр, хүснэгт, цагаан өнгийг үүнд тааруулна. Түвшний үндсэн өнгө хэвээр.")
+lblSizeIn = input.string("Medium", "Label size", options = ["Tiny", "Small", "Medium", "Normal", "Large"], group = G0, tooltip = "Шошгын хэмжээ. Medium нь ердийн хэмжээ. Автомат горимд цагийн бүлэг үүнийг дарж болно.")
+autoAdapt = input.bool(true, "Auto-adapt to timeframe", group = G0, tooltip = "Асаалттай бол чартын цагт тааруулж 5м, 1ц, 4ц, өдөр, сарын пресетийг сонгоно. Доорх цагийн бүлгээр тус бүрийг нь өөрчилнө. Унтраавал ерөнхий тохиргоо үйлчилнэ.")
+mergeOn = input.bool(true, "Merge overlapping labels ( A / B )", group = G0, tooltip = "Ойрхон үнэн дээрх шошгыг A / B гэж нэгтгэнэ. Ижил төрөл давхцвал M / Q VAH гэж харуулна.")
+mergePct = input.float(8.0, "Merge distance (% of ATR 14)", minval = 0.0, step = 1.0, group = G0, tooltip = "Нэгтгэх зай. ATR-ын хувиар. Их байх тусам хол шошго ч нийлнэ.")
+lblOnly = input.bool(false, "Labels only · Зөвхөн шошго", group = G0, tooltip = "VWAP шугам, зурвас, өмнөх үнийн бүсийн хайрцгийг нууж зөвхөн шошгыг үлдээнэ.")
 
-// ───────────────────────────── 01 · VWAP SUITE ─────────────────────────────
-G1  = "01 · VWAP Suite"
-vwSrc     = input.source(hlc3, "Source", group = G1)
-vwLblOff  = input.int(45, "Label offset (bars)", minval = 0, maxval = 300, group = G1)
-vwNaming  = input.string("Orochi (wVAH)", "Label naming", options = ["Orochi (wVAH)", "Sigma (W +1σ)"], group = G1)
-vwUnder   = input.bool(true, "Underline tag (____wVAH)", group = G1)
-G1a = "01a · Session VWAPs (D/W/M/Q/Y)"
-showDV = input.bool(true,  "Daily",     inline = "vd", group = G1a)
-colDV  = input.color(#D1D4DC, "",       inline = "vd", group = G1a)
-dStyle = input.string("Circles", "Style", options = ["Circles", "Line"], group = G1a)
-showWV = input.bool(false, "Weekly",    inline = "vw", group = G1a)
-colWV  = input.color(#4CAF50, "",       inline = "vw", group = G1a)
-showMV = input.bool(false, "Monthly",   inline = "vm", group = G1a)
-colMV  = input.color(#FF9800, "",       inline = "vm", group = G1a)
-showQV = input.bool(false, "Quarterly", inline = "vq", group = G1a)
-colQV  = input.color(#FFC107, "",       inline = "vq", group = G1a)
-showYV = input.bool(false, "Yearly",    inline = "vy", group = G1a)
-colYV  = input.color(#F23645, "",       inline = "vy", group = G1a)
-G1b = "01b · Standard Deviation Bands"
-bandsOn    = input.bool(true, "Show SD bands", group = G1b)
-bandAnchor = input.string("Daily", "Anchored to period", options = ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"], group = G1b)
-b1On  = input.bool(true,  "±1σ", group = G1b)
-m1    = input.float(1.0, "", step = 0.1, group = G1b)
-f1On  = input.bool(true,  "fill", group = G1b)
-b2On  = input.bool(false, "±2σ", group = G1b)
-m2    = input.float(2.0, "", step = 0.1, group = G1b)
-f2On  = input.bool(false, "fill", group = G1b)
-b3On  = input.bool(false, "±3σ", group = G1b)
-m3    = input.float(3.0, "", step = 0.1, group = G1b)
-f3On  = input.bool(false, "fill", group = G1b)
-bandLineCol = input.color(color.new(#B2B5BE, 55), "Band line", group = G1b)
-bandFillCol = input.color(color.new(#FFFFFF, 92), "Band fill", group = G1b)
-G1c = "01c · HTF Labels & Previous Period"
-lblDV      = input.bool(false, "Daily labels", group = G1c)
-lblWV      = input.bool(true,  "Weekly", group = G1c)
-lblMV      = input.bool(true,  "Monthly", group = G1c)
-lblQV      = input.bool(true,  "Quarterly", group = G1c)
-lblYV      = input.bool(false, "Yearly", group = G1c)
-lblCur     = input.bool(true,  "Show current labels (VWAP/VAH/VAL)", group = G1c)
-lblCur2    = input.bool(false, "Also label ±2σ / ±3σ", group = G1c)
-lblPrev    = input.bool(true,  "Show previous-period labels (pwVWAP…)", group = G1c)
-prevLines  = input.bool(false, "Draw previous VWAP / ±1σ as levels", group = G1c)
-G1d = "01d · Rolling VWAP (from daily bars)"
-r7On   = input.bool(true,  "7D", group = G1d)
-r30On  = input.bool(false, "30D", group = G1d)
-r90On  = input.bool(false, "90D", group = G1d)
-r365On = input.bool(false, "365D", group = G1d)
-rCol   = input.color(color.new(#D1D4DC, 10), "Rolling color", group = G1d)
+// ───────────────────────── 01 · VWAP ─────────────────────────
+G1 = "01 · VWAP · Хэмжээстэй дундаж үнэ"
+vwSrc = input.source(hlc3, "Source · Эх үнэ", group = G1, tooltip = "VWAP-д орох үнэ. Анхдагч нь hlc3, өндөр нам хаалтын дундаж.")
+vwLblOff = input.int(12, "Label offset (bars) · Шошгын зай", minval = 0, maxval = 80, group = G1, tooltip = "Автомат горим унтарсан үед шошго баруун тийш хэдэн баар суух вэ. Шугамын урт богино.")
+vwNaming = input.string("Orochi (wVAH)", "Label naming · Шошгын нэр", options = ["Orochi (wVAH)", "Sigma (W +1σ)"], group = G1, tooltip = "Orochi нэршил wVAH, pwVWAP. Sigma нэршил W +1σ.")
+vwUnder = input.bool(false, "Underline tag · Доогуур зураас", group = G1, tooltip = "Шошгын өмнө ____ гэж зураас нэмнэ. Цэвэр харагдахын тулд анхдагчаар унтарсан.")
+G1a = "01a · Session VWAPs · Үеийн VWAP (D/W/M/Q/Y)"
+showDV = input.bool(true, "Daily · Өдөр", inline = "vd", group = G1a, tooltip = "Өнөөдрийн эхнээс тооцсон өдрийн VWAP.")
+colDV = input.color(#D1D4DC, "", inline = "vd", group = G1a, tooltip = "Өдрийн VWAP-ын өнгө.")
+dStyle = input.string("Circles", "Style · Загвар", options = ["Circles", "Line"], group = G1a, tooltip = "Өдрийн VWAP-ыг цэгээр (тасархай мэт) эсвэл шугамаар зурах.")
+showWV = input.bool(false, "Weekly · Долоо хоног", inline = "vw", group = G1a, tooltip = "Энэ долоо хоногоос тооцсон VWAP. Автомат горимд 5м ба 1ц дээр асна.")
+colWV = input.color(#4CAF50, "", inline = "vw", group = G1a, tooltip = "Долоо хоногийн VWAP-ын өнгө.")
+showMV = input.bool(false, "Monthly · Сар", inline = "vm", group = G1a, tooltip = "Энэ сараас тооцсон VWAP.")
+colMV = input.color(#FF9800, "", inline = "vm", group = G1a, tooltip = "Сарын VWAP-ын өнгө.")
+showQV = input.bool(false, "Quarterly · Улирал", inline = "vq", group = G1a, tooltip = "Энэ улирлаас тооцсон VWAP.")
+colQV = input.color(#FFC107, "", inline = "vq", group = G1a, tooltip = "Улирлын VWAP-ын өнгө.")
+showYV = input.bool(false, "Yearly · Жил", inline = "vy", group = G1a, tooltip = "Энэ жилээс тооцсон VWAP.")
+colYV = input.color(#F23645, "", inline = "vy", group = G1a, tooltip = "Жилийн VWAP-ын өнгө.")
+G1b = "01b · SD Bands · Хазайлтын зурвас"
+bandsOn = input.bool(true, "Show SD bands · Зурвас харуулах", group = G1b, tooltip = "Сонгосон үеийн VWAP дээр стандарт хазайлтын зурвас зурна. Дундаж нь VWAP.")
+bandAnchor = input.string("Daily", "Anchored to period · Үе", options = ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"], group = G1b, tooltip = "Зурвас аль үеийн VWAP дээр тооно. Автомат горимд идэвхтэй VWAP-д таарна.")
+b1On = input.bool(true, "±1σ · VAH/VAL", group = G1b, tooltip = "±1 сигма нь VAH ба VAL зурвас. Анхдагчаар асаалттай, дүүргэлттэй.")
+m1 = input.float(1.0, "±1 multiplier · Үржүүлэгч", step = 0.1, group = G1b, tooltip = "1 сигмагийн үржүүлэгч. 1.0 нь яг нэг стандарт хазайлт.")
+f1On = input.bool(true, "±1 fill · Дүүргэлт", group = G1b, tooltip = "VAH ба VAL хоорондын талбайг бүдэг дүүргэнэ.")
+b2On = input.bool(true, "±2σ", group = G1b, tooltip = "±2 сигма. Анхдагчаар асаалттай, дүүргэлтгүй.")
+m2 = input.float(2.0, "±2 multiplier · Үржүүлэгч", step = 0.1, group = G1b, tooltip = "2 сигмагийн үржүүлэгч.")
+f2On = input.bool(false, "±2 fill · Дүүргэлт", group = G1b, tooltip = "±2 зурвасын дүүргэлт. Анхдагчаар унтарсан.")
+b3On = input.bool(false, "±3σ", group = G1b, tooltip = "±3 сигма. Анхдагчаар унтарсан.")
+m3 = input.float(3.0, "±3 multiplier · Үржүүлэгч", step = 0.1, group = G1b, tooltip = "3 сигмагийн үржүүлэгч.")
+f3On = input.bool(false, "±3 fill · Дүүргэлт", group = G1b, tooltip = "±3 зурвасын дүүргэлт.")
+bandLineCol = input.color(color.new(#B2B5BE, 45), "Band line · Зурвасын шугам", group = G1b, tooltip = "Хазайлтын шугамын өнгө. ±2 ба ±3 нь цэгэн загвартай.")
+bandFillCol = input.color(color.new(#FFFFFF, 92), "Band fill · Дүүргэлт", group = G1b, tooltip = "±1 үнийн бүсийн дүүргэлтийн өнгө.")
+prevVaBox = input.bool(true, "Previous VA box · Өмнөх үнийн бүс", group = G1b, tooltip = "Өмнөх үеийн VWAP ±1σ хооронд бүдэг хайрцаг зурна.")
+G1c = "01c · Labels · Шошго"
+lblDV = input.bool(false, "Daily labels · Өдрийн шошго", group = G1c, tooltip = "Өдрийн VWAP шошго. Автомат горимд харагдаж буй VWAP-д шошго автоматаар гарна.")
+lblWV = input.bool(true, "Weekly · Долоо хоног", group = G1c, tooltip = "Долоо хоногийн VWAP шошго. wVAH, wVWAP, wVAL.")
+lblMV = input.bool(true, "Monthly · Сар", group = G1c, tooltip = "Сарын VWAP шошго.")
+lblQV = input.bool(true, "Quarterly · Улирал", group = G1c, tooltip = "Улирлын VWAP шошго.")
+lblYV = input.bool(false, "Yearly · Жил", group = G1c, tooltip = "Жилийн VWAP шошго.")
+lblCur = input.bool(true, "Current labels · Одоогийн шошго", group = G1c, tooltip = "Одоогийн VWAP, VAH, VAL шошго.")
+lblCur2 = input.bool(false, "Also ±2σ / ±3σ · Нэмэлт шошго", group = G1c, tooltip = "±2 ба ±3 шошгыг нэмж харуулна.")
+lblPrev = input.bool(true, "Previous labels · Өмнөх үе", group = G1c, tooltip = "Өмнөх үеийн pwVWAP, pwVAH, pwVAL шошго.")
+prevLines = input.bool(false, "Previous VWAP lines · Өмнөх шугам", group = G1c, tooltip = "Өмнөх VWAP ба ±1σ-г баруун ирмэгт богино шугамаар зурна.")
+G1d = "01d · Rolling VWAP · Гүйдэг VWAP"
+r7On = input.bool(true, "7D", group = G1d, tooltip = "Сүүлийн 7 өдрийн гүйдэг VWAP. Өдрийн хаагдсан баараар, дахин будахгүй.")
+r30On = input.bool(false, "30D", group = G1d, tooltip = "Сүүлийн 30 өдрийн гүйдэг VWAP.")
+r90On = input.bool(false, "90D", group = G1d, tooltip = "Сүүлийн 90 өдрийн гүйдэг VWAP.")
+r365On = input.bool(false, "365D", group = G1d, tooltip = "Сүүлийн 365 өдрийн гүйдэг VWAP.")
+rCol = input.color(color.new(#D1D4DC, 10), "Rolling color · Өнгө", group = G1d, tooltip = "Гүйдэг VWAP-ын өнгө.")
 
-// ───────────────────────────── 02 · TPO ─────────────────────────────
-G2 = "02 · TPO / Market Profile"
-tpoOn      = input.bool(true, "Enable TPO", group = G2)
-tpoTFin    = input.string("Daily", "Profile period", options = ["Daily", "Weekly", "Monthly"], group = G2)
-tpoMin     = input.int(30, "TPO period (minutes)", minval = 1, maxval = 240, group = G2)
-tpoRows    = input.int(60, "Price rows", minval = 10, maxval = 150, group = G2)
-tpoVA      = input.float(70.0, "Value area %", minval = 10, maxval = 99, group = G2) / 100.0
-showPrevP  = input.bool(true, "Show previous profile", group = G2)
-prevWPct   = input.int(40, "Previous profile width (% of session)", minval = 5, maxval = 100, group = G2)
-showDevP   = input.bool(true, "Show developing profile (right edge)", group = G2)
-devOff     = input.int(40, "Developing profile right offset (bars)", minval = 5, maxval = 300, group = G2)
-devW       = input.int(30, "Developing profile width (bars)", minval = 5, maxval = 200, group = G2)
-tpoLblOff  = input.int(60, "Previous-level label offset (bars)", minval = 0, maxval = 300, group = G2)
-histInCol  = input.color(color.new(#B2B5BE, 55), "Histogram (in VA)", group = G2)
-histOutCol = input.color(color.new(#B2B5BE, 72), "(outside VA)", group = G2)
-vaBoxCol   = input.color(color.new(#FFFFFF, 92), "Value area fill", group = G2)
-pocCol     = input.color(#E05252, "POC", group = G2)
-pocW       = input.int(4, "width", minval = 1, maxval = 8, group = G2)
-vaLineCol  = input.color(#9598A1, "VAH / VAL", group = G2)
-extLines   = input.bool(true, "Extend previous POC/VAH/VAL to the right", group = G2)
-singlesOn  = input.bool(true, "Single prints", group = G2)
-singleCol  = input.color(color.new(#9C27B0, 55), "", group = G2)
-singleExt  = input.bool(true, "Extend single prints until filled", group = G2)
-nPocOn     = input.bool(true, "Naked previous POCs", group = G2)
-nPocMax    = input.int(5, "max", minval = 1, maxval = 20, group = G2)
+// ───────────────────────── 02 · TPO ─────────────────────────
+G2 = "02 · TPO · Цагийн профайл"
+tpoOn = input.bool(true, "Enable TPO · TPO асаах", group = G2, tooltip = "Цагийн үнийн профайл. Үнийг хэмжээгээр биш, хэдэн блок хугацаанд хүрч байснаар зурна.")
+tpoTFin = input.string("Daily", "Profile period · Профайлын үе", options = ["Daily", "Weekly", "Monthly"], group = G2, tooltip = "Нэг профайл хэр хугацааг хамарна. Чарт энэ үеэс доош байх ёстой.")
+tpoMin = input.int(30, "TPO period (minutes) · Блок минут", minval = 1, maxval = 240, group = G2, tooltip = "Нэг TPO блок хэдэн минут вэ. Анхдагч 30 минут.")
+tpoRows = input.int(48, "Price rows · Үнийн мөр", minval = 8, maxval = 80, group = G2, tooltip = "Профайлын үнийн мөр. Их байх тусам нарийвчилна, хайрцагны лимитэд ойртоно.")
+tpoVA = input.float(68.0, "Value area % · Үнийн бүс %", minval = 10, maxval = 99, group = G2, tooltip = "Үнийн бүсэд багтах TPO-ийн хувь. Анхдагч 68.") / 100.0
+tpoHist = input.int(3, "Historical profiles · Өмнөх профайл", minval = 1, maxval = 6, group = G2, tooltip = "Хэдэн хаагдсан TPO профайл зурах вэ. Баруун талд одоо хөгжиж буй профайл нэмэгдэнэ.")
+showPrevP = input.bool(true, "Show previous profiles · Өмнөх профайл", group = G2, tooltip = "Хаагдсан профайлуудын гистограмыг зурна.")
+prevWPct = input.int(40, "Profile width % · Өргөн %", minval = 5, maxval = 100, group = G2, tooltip = "Гистограм тухайн үеийн өргөний хэдэн хувийг эзлэх вэ.")
+showDevP = input.bool(true, "Developing profile · Хөгжиж буй", group = G2, tooltip = "Одоогийн үеийн профайлыг баруун ирмэгт зурна.")
+devOff = input.int(16, "Developing offset · Баруун зай", minval = 4, maxval = 80, group = G2, tooltip = "Хөгжиж буй профайл сүүлийн баараас хэдэн баар баруун тийш байх вэ.")
+devW = input.int(18, "Developing width · Өргөн", minval = 4, maxval = 80, group = G2, tooltip = "Хөгжиж буй профайлын хамгийн өргөн, баараар.")
+tpoLblOff = input.int(12, "Label offset · Шошгын зай", minval = 0, maxval = 80, group = G2, tooltip = "TPO шошго баруун тийш хэдэн баар байх вэ.")
+histInCol = input.color(color.new(#B2B5BE, 55), "Histogram in VA · Бүсийн дотор", group = G2, tooltip = "Үнийн бүсийн доторх TPO мөрийн өнгө.")
+histOutCol = input.color(color.new(#B2B5BE, 75), "Outside VA · Бүсийн гадна", group = G2, tooltip = "Үнийн бүсийн гаднах TPO мөрийн өнгө.")
+vaBoxCol = input.color(color.new(#FFFFFF, 92), "Value area fill · Бүсийн дэвсгэр", group = G2, tooltip = "VAH ба VAL хоорондын бүдэг дэвсгэр.")
+pocCol = input.color(#E05252, "POC", group = G2, tooltip = "Хамгийн их TPO-той үнэ, хяналтын цэг.")
+pocW = input.int(2, "POC width · POC зузаан", minval = 1, maxval = 4, group = G2, tooltip = "POC шугамын зузаан.")
+vaLineCol = input.color(#9598A1, "VAH / VAL", group = G2, tooltip = "Үнийн бүсийн дээд ба доод хязгаарын өнгө.")
+extLines = input.bool(true, "Extend POC/VAH/VAL · Түвшин сунгах", group = G2, tooltip = "Сүүлийн хаагдсан профайлын POC, VAH, VAL-ыг баруун ирмэгт богино шугамаар зурна.")
+htfTpo = input.bool(true, "PW/PM on daily profile", group = G2, tooltip = "Өдрийн профайл дээр өмнөх долоо хоног (PW) ба өмнөх сарын (PM) VAH, POC, VAL түвшинг нэмнэ.")
+singlesOn = input.bool(true, "Single prints · Нэг хэвлэл", group = G2, tooltip = "Зөвхөн нэг блок хүрч байсан үнийн мужийг ягаанаар дүүргэж, дахин хүрэх хүртэл сунгана.")
+singleCol = input.color(#9C27B0, "Single color · Нэг хэвлэлийн өнгө", group = G2, tooltip = "Нэг хэвлэлийн ягаан дүүргэлт.")
+singleExt = input.bool(true, "Extend until filled · Дүүртэл сунгах", group = G2, tooltip = "Нэг хэвлэлийг үнэ буцаж бүх мужийг туулах хүртэл баруун тийш сунгана.")
+excessOn = input.bool(false, "Excess high/low · Илүүдэл", group = G2, tooltip = "Орой эсвэл ёроолд ганц TPO байвал илүүдэл гэж тэмдэглэнэ. Анхдагчаар унтарсан.")
+poorOn = input.bool(false, "Poor high/low · Сул орой", group = G2, tooltip = "Орой эсвэл ёроолд 2 ба түүнээс олон TPO байвал дутуу аукцион. Анхдагчаар унтарсан.")
+nPocOn = input.bool(true, "Naked POCs · Хөндөгдөөгүй POC", group = G2, tooltip = "Үнэ дахин хүрээгүй өмнөх POC-уудыг харуулна. Хүрвэл арилна.")
+nPocMax = input.int(5, "Naked POC max · Хязгаар", minval = 1, maxval = 8, group = G2, tooltip = "Хэдэн хөндөгдөөгүй POC хүртэл хадгалах вэ.")
 
-// ───────────────────────────── 03 · KEY LEVELS ─────────────────────────────
-G3 = "03 · Key Levels"
-klOn      = input.bool(true, "Enable key levels", group = G3)
-klOff     = input.int(20, "Extend labels beyond price (bars)", minval = 0, maxval = 300, group = G3)
-klNakMax  = input.int(5, "Max naked opens per timeframe", minval = 0, maxval = 20, group = G3)
-G3d = "03a · Daily"
-dOpenOn = input.bool(true,  "Open", group = G3d)
-dPrevHL = input.bool(true,  "Prev H/L", group = G3d)
-dPrevMd = input.bool(true,  "Prev Mid", group = G3d)
-dPrevC  = input.bool(true,  "Prev Close", group = G3d)
-dCurHL  = input.bool(false, "Current H/L", group = G3d)
-dNaked  = input.bool(true,  "Naked Opens", group = G3d)
-dCol    = input.color(#2962FF, "Color", group = G3d)
-G3w = "03b · Weekly"
-wOpenOn = input.bool(true,  "Open", group = G3w)
-wPrevHL = input.bool(true,  "Prev H/L", group = G3w)
-wPrevMd = input.bool(true,  "Prev Mid", group = G3w)
-wPrevC  = input.bool(false, "Prev Close", group = G3w)
-wCurHL  = input.bool(false, "Current H/L", group = G3w)
-wNaked  = input.bool(true,  "Naked Opens", group = G3w)
-wCol    = input.color(#4CAF50, "Color", group = G3w)
-G3m = "03c · Monthly"
-mOpenOn = input.bool(true,  "Open", group = G3m)
-mPrevHL = input.bool(true,  "Prev H/L", group = G3m)
-mPrevMd = input.bool(false, "Prev Mid", group = G3m)
-mPrevC  = input.bool(false, "Prev Close", group = G3m)
-mCurHL  = input.bool(false, "Current H/L", group = G3m)
-mNaked  = input.bool(false, "Naked Opens", group = G3m)
-mCol    = input.color(#F23645, "Color", group = G3m)
-G3q = "03d · Quarterly"
-qOpenOn = input.bool(true,  "Open", group = G3q)
-qPrevHL = input.bool(true,  "Prev H/L", group = G3q)
-qPrevMd = input.bool(false, "Prev Mid", group = G3q)
-qPrevC  = input.bool(false, "Prev Close", group = G3q)
-qCurHL  = input.bool(false, "Current H/L", group = G3q)
-qNaked  = input.bool(true,  "Naked Opens", group = G3q)
-qCol    = input.color(#F23645, "Color", group = G3q)
-G3y = "03e · Yearly"
-yOpenOn = input.bool(true,  "Open", group = G3y)
-yPrevHL = input.bool(false, "Prev H/L", group = G3y)
-yPrevMd = input.bool(false, "Prev Mid", group = G3y)
-yPrevC  = input.bool(false, "Prev Close", group = G3y)
-yCurHL  = input.bool(true,  "Current H/L", group = G3y)
-yNaked  = input.bool(false, "Naked Opens", group = G3y)
-yCol    = input.color(#FFFFFF, "Color", group = G3y)
-G3s = "03f · Sessions (America/New_York)"
-asiaOn  = input.bool(true, "Asia",   inline = "sa", group = G3s)
-asiaSes = input.session("1800-0300", "", inline = "sa", group = G3s)
-asiaCol = input.color(#B39DDB, "", inline = "sa", group = G3s)
-lonOn   = input.bool(true, "London", inline = "sl", group = G3s)
-lonSes  = input.session("0300-0800", "", inline = "sl", group = G3s)
-lonCol  = input.color(#4DD0E1, "", inline = "sl", group = G3s)
-nyOn    = input.bool(true, "New York", inline = "sn", group = G3s)
-nySes   = input.session("0800-1700", "", inline = "sn", group = G3s)
-nyCol   = input.color(#FFB74D, "", inline = "sn", group = G3s)
+// ───────────────────────── 03 · Гол түвшин ─────────────────────────
+G3 = "03 · Key Levels · Гол түвшин"
+klOn = input.bool(true, "Enable key levels · Түвшин асаах", group = G3, tooltip = "Нээлт, өмнөх өндөр доод, сешний түвшинг баруун ирмэгт богино шугамаар зурна.")
+klOff = input.int(12, "Extend (bars) · Шугамын урт", minval = 1, maxval = 40, group = G3, tooltip = "Түвшин баруун тийш хэдэн баар сунах вэ. Богино байх тусам цэвэрхэн.")
+klNakMax = input.int(5, "Max naked opens · Нүцгэн нээлт", minval = 0, maxval = 8, group = G3, tooltip = "Үе бүр дээр хэдэн хөндөгдөөгүй нээлт хадгалах вэ. Үнэ хүрвэл арилна. Анхдагч 5.")
+G3d = "03a · Daily · Өдөр"
+dOpenOn = input.bool(true, "Open · Нээлт", group = G3d, tooltip = "Өнөөдрийн нээлтийн үнэ.")
+dPrevHL = input.bool(true, "Prev H/L · Өмнөх өндөр доод", group = G3d, tooltip = "Өмнөх өдрийн дээд ба доод цэг, PDH ба PDL.")
+dPrevMd = input.bool(true, "Prev Mid · Өмнөх дунд", group = G3d, tooltip = "Өмнөх өдрийн дээд доодын дундаж. Тасархай шугам.")
+dPrevC = input.bool(true, "Prev Close · Өмнөх хаалт", group = G3d, tooltip = "Өмнөх өдрийн хаалт.")
+dCurHL = input.bool(false, "Current H/L · Одоогийн өндөр доод", group = G3d, tooltip = "Өнөөдрийн явж буй дээд ба доод.")
+dNaked = input.bool(true, "Naked Opens · Нүцгэн нээлт", group = G3d, tooltip = "Үнэ дахин хүрээгүй өмнөх өдрийн нээлтүүд.")
+dCol = input.color(#2962FF, "Color · Өнгө", group = G3d, tooltip = "Өдрийн түвшний өнгө. Цэнхэр.")
+G3w = "03b · Weekly · Долоо хоног"
+wOpenOn = input.bool(true, "Open · Нээлт", group = G3w, tooltip = "Энэ долоо хоногийн нээлт.")
+wPrevHL = input.bool(true, "Prev H/L · Өмнөх өндөр доод", group = G3w, tooltip = "Өмнөх долоо хоногийн дээд ба доод, PWH ба PWL.")
+wPrevMd = input.bool(true, "Prev Mid · Өмнөх дунд", group = G3w, tooltip = "Өмнөх долоо хоногийн дундаж. Тасархай шугам.")
+wPrevC = input.bool(false, "Prev Close · Өмнөх хаалт", group = G3w, tooltip = "Өмнөх долоо хоногийн хаалт.")
+wCurHL = input.bool(false, "Current H/L · Одоогийн", group = G3w, tooltip = "Энэ долоо хоногийн явж буй дээд доод.")
+wNaked = input.bool(true, "Naked Opens · Нүцгэн нээлт", group = G3w, tooltip = "Хөндөгдөөгүй долоо хоногийн нээлт.")
+wCol = input.color(#4CAF50, "Color · Өнгө", group = G3w, tooltip = "Долоо хоногийн түвшний өнгө. Ногоон.")
+G3m = "03c · Monthly · Сар"
+mOpenOn = input.bool(true, "Open · Нээлт", group = G3m, tooltip = "Энэ сарын нээлт.")
+mPrevHL = input.bool(true, "Prev H/L · Өмнөх өндөр доод", group = G3m, tooltip = "Өмнөх сарын дээд ба доод.")
+mPrevMd = input.bool(false, "Prev Mid · Өмнөх дунд", group = G3m, tooltip = "Өмнөх сарын дундаж. Тасархай шугам.")
+mPrevC = input.bool(false, "Prev Close · Өмнөх хаалт", group = G3m, tooltip = "Өмнөх сарын хаалт.")
+mCurHL = input.bool(false, "Current H/L · Одоогийн", group = G3m, tooltip = "Энэ сарын явж буй дээд доод.")
+mNaked = input.bool(false, "Naked Opens · Нүцгэн нээлт", group = G3m, tooltip = "Хөндөгдөөгүй сарын нээлт.")
+mCol = input.color(#F23645, "Color · Өнгө", group = G3m, tooltip = "Сарын түвшний өнгө. Улаан.")
+G3q = "03d · Quarterly · Улирал"
+qOpenOn = input.bool(true, "Open · Нээлт", group = G3q, tooltip = "Энэ улирлын нээлт.")
+qPrevHL = input.bool(true, "Prev H/L · Өмнөх өндөр доод", group = G3q, tooltip = "Өмнөх улирлын дээд ба доод.")
+qPrevMd = input.bool(false, "Prev Mid · Өмнөх дунд", group = G3q, tooltip = "Өмнөх улирлын дундаж. Тасархай шугам.")
+qPrevC = input.bool(false, "Prev Close · Өмнөх хаалт", group = G3q, tooltip = "Өмнөх улирлын хаалт.")
+qCurHL = input.bool(false, "Current H/L · Одоогийн", group = G3q, tooltip = "Энэ улирлын явж буй дээд доод.")
+qNaked = input.bool(true, "Naked Opens · Нүцгэн нээлт", group = G3q, tooltip = "Хөндөгдөөгүй улирлын нээлт.")
+qCol = input.color(#F23645, "Color · Өнгө", group = G3q, tooltip = "Улирлын түвшний өнгө. Улаан.")
+G3y = "03e · Yearly · Жил"
+yOpenOn = input.bool(true, "Open · Нээлт", group = G3y, tooltip = "Энэ жилийн нээлт.")
+yPrevHL = input.bool(false, "Prev H/L · Өмнөх өндөр доод", group = G3y, tooltip = "Өмнөх жилийн дээд ба доод.")
+yPrevMd = input.bool(false, "Prev Mid · Өмнөх дунд", group = G3y, tooltip = "Өмнөх жилийн дундаж. Тасархай шугам.")
+yPrevC = input.bool(false, "Prev Close · Өмнөх хаалт", group = G3y, tooltip = "Өмнөх жилийн хаалт.")
+yCurHL = input.bool(true, "Current H/L · Одоогийн", group = G3y, tooltip = "Энэ жилийн явж буй дээд доод.")
+yNaked = input.bool(false, "Naked Opens · Нүцгэн нээлт", group = G3y, tooltip = "Хөндөгдөөгүй жилийн нээлт.")
+yCol = input.color(#FFFFFF, "Color · Өнгө", group = G3y, tooltip = "Жилийн түвшний өнгө. Цагаан. Цайвар загварт бараан болно.")
+G3s = "03f · Sessions · Сешн (New York)"
+asiaOn = input.bool(true, "Asia · Ази", inline = "sa", group = G3s, tooltip = "Азийн сешний дээд ба доод.")
+asiaSes = input.session("1800-0300", "", inline = "sa", group = G3s, tooltip = "Азийн сешний цаг, Нью-Йорк цагаар.")
+asiaCol = input.color(#B39DDB, "", inline = "sa", group = G3s, tooltip = "Азийн сешний өнгө.")
+lonOn = input.bool(true, "London · Лондон", inline = "sl", group = G3s, tooltip = "Лондонгийн сешний дээд ба доод.")
+lonSes = input.session("0300-0800", "", inline = "sl", group = G3s, tooltip = "Лондонгийн сешний цаг, Нью-Йорк цагаар.")
+lonCol = input.color(#4DD0E1, "", inline = "sl", group = G3s, tooltip = "Лондонгийн сешний өнгө.")
+nyOn = input.bool(true, "New York · Нью-Йорк", inline = "sn", group = G3s, tooltip = "Нью-Йоркийн сешний дээд ба доод.")
+nySes = input.session("0800-1700", "", inline = "sn", group = G3s, tooltip = "Нью-Йоркийн сешний цаг.")
+nyCol = input.color(#FFB74D, "", inline = "sn", group = G3s, tooltip = "Нью-Йоркийн сешний өнгө.")
 
-// ───────────────────────────── 04 · VOLUME DELTA & OI ─────────────────────────────
-G4 = "04 · Volume Delta & Open Interest"
-dOn       = input.bool(true, "Enable volume delta", group = G4)
-dMethod   = input.string("Intrabar (LTF)", "Buy/sell classification", options = ["Intrabar (LTF)", "Candle body"], group = G4, tooltip = "Intrabar: each lower-timeframe bar's volume is counted as buy (close>open) or sell (close<open); ties use the tick rule. Falls back to the candle-body estimate when no intrabar data exists.")
-ltfIn     = input.timeframe("1", "LTF timeframe", group = G4)
-zLen      = input.int(50, "Z length", minval = 5, maxval = 500, group = G4)
-t1On  = input.bool(true, ">", group = G4)
-t1    = input.float(1.5, "", step = 0.1, group = G4)
-t1u   = input.color(#FFF59D, "▲", group = G4)
-t1d   = input.color(#FAA1A4, "▼", group = G4)
-t2On  = input.bool(true, ">", group = G4)
-t2    = input.float(2.5, "", step = 0.1, group = G4)
-t2u   = input.color(#769C78, "▲", group = G4)
-t2d   = input.color(#A26768, "▼", group = G4)
-t3On  = input.bool(true, ">", group = G4)
-t3    = input.float(3.5, "", step = 0.1, group = G4)
-t3u   = input.color(#207E24, "▲", group = G4)
-t3d   = input.color(#FF0000, "▼", group = G4)
-colorBars = input.bool(true, "Color bars by delta spike tier", group = G4)
-bubOn     = input.bool(true, "Delta bubbles", group = G4)
-bubMin    = input.int(1, "min tier", minval = 1, maxval = 3, group = G4)
-bubLoc    = input.string("Max-volume price", "Bubble position", options = ["Max-volume price", "Bar high / low"], group = G4)
-bubPal    = input.string("Green / Red", "Bubble palette", options = ["Green / Red", "Tier colors"], group = G4)
-bubBuy    = input.color(#4CAF50, "Buy", group = G4)
-bubSell   = input.color(#F23645, "Sell", group = G4)
-tblOn     = input.bool(true, "Delta / CVD table", group = G4)
-tblPos    = input.string("Top Right", "Table position", options = ["Top Right", "Bottom Right", "Top Left", "Bottom Left"], group = G4)
-G4o = "04a · Open Interest (crypto perpetuals only)"
-oiOn   = input.bool(true, "Highlight OI pumps / dumps", group = G4o, tooltip = "Only active when the chart symbol is a crypto perpetual (ticker ends with .P). XAUUSD has no open-interest feed, so this stays hidden.")
-oiZThr = input.float(2.5, "OI change z-score filter", minval = 0.5, step = 0.1, group = G4o)
-oiPump = input.color(#388E3C, "Pump", group = G4o)
-oiDump = input.color(#F7525F, "Dump", group = G4o)
+// ───────────────────────── 04 · Дельта ─────────────────────────
+G4 = "04 · Volume Delta · Дельта"
+dOn = input.bool(true, "Enable volume delta · Дельта асаах", group = G4, tooltip = "Авсан ба зассан тик хэмжээний зөрүү. XAUUSD дээр энэ нь тик хэмжээ, биржийн гэрээний хэмжээ биш.")
+dMethod = input.string("Intrabar (LTF)", "Buy/sell · Ав/Зар", options = ["Intrabar (LTF)", "Candle body"], group = G4, tooltip = "Доод цагийн баар бүрийг өнгөөр нь авсан эсвэл зассан гэж ангилна. Байхгүй бол лааны биеэр ойролцоолно.")
+ltfIn = input.timeframe("1", "LTF · Доод цаг", group = G4, tooltip = "Ангилалд ашиглах доод цаг. Мөн одоогийн баарын профайлыг нарийвчилна.")
+dThr = input.string("Relative", "Threshold · Босго", options = ["Relative", "Z-score", "SMA"], group = G4, tooltip = "Relative = сүүлийн 20 баарын дундажаас дахин. Z-score = 50 баарын хазайлт. SMA = 300 баарын дундаж.")
+relLen = input.int(20, "Relative length · Харьцангуй урт", minval = 5, maxval = 200, group = G4, tooltip = "Relative горимын дундаж урт. Анхдагч 20.")
+zLen = input.int(50, "Z length · Z урт", minval = 5, maxval = 500, group = G4, tooltip = "Z-score горимын урт. Анхдагч 50.")
+smaLen = input.int(300, "SMA length · SMA урт", minval = 20, maxval = 1000, group = G4, tooltip = "SMA горимын урт. Анхдагч 300.")
+t1On = input.bool(true, "Tier 1 on · 1-р шат", group = G4, tooltip = "1-р шатыг асаана.")
+t1 = input.float(1.5, "Tier 1 ×", step = 0.1, group = G4, tooltip = "1-р шат. Босгоосоо 1.5 дахин их.")
+t1u = input.color(#FFF59D, "Tier 1 up · Өсөлт", group = G4, tooltip = "1-р шатын өсөлтийн лааны өнгө.")
+t1d = input.color(#FAA1A4, "Tier 1 down · Уналт", group = G4, tooltip = "1-р шатын уналтын лааны өнгө.")
+t2On = input.bool(true, "Tier 2 on · 2-р шат", group = G4, tooltip = "2-р шатыг асаана.")
+t2 = input.float(2.5, "Tier 2 ×", step = 0.1, group = G4, tooltip = "2-р шат. 2.5 дахин.")
+t2u = input.color(#769C78, "Tier 2 up · Өсөлт", group = G4, tooltip = "2-р шатын өсөлтийн өнгө.")
+t2d = input.color(#A26768, "Tier 2 down · Уналт", group = G4, tooltip = "2-р шатын уналтын өнгө.")
+t3On = input.bool(true, "Tier 3 on · 3-р шат", group = G4, tooltip = "3-р шатыг асаана.")
+t3 = input.float(3.5, "Tier 3 ×", step = 0.1, group = G4, tooltip = "3-р шат. 3.5 дахин. Хамгийн хүчтэй.")
+t3u = input.color(#207E24, "Tier 3 up · Өсөлт", group = G4, tooltip = "3-р шатын өсөлтийн өнгө.")
+t3d = input.color(#FF0000, "Tier 3 down · Уналт", group = G4, tooltip = "3-р шатын уналтын өнгө.")
+colorBars = input.bool(true, "Color bars · Лаа будах", group = G4, tooltip = "Огцом дельтатай лааг шатны өнгөөр будна.")
+bubOn = input.bool(true, "Delta bubbles · Дельта бөмбөлөг", group = G4, tooltip = "Огцом дельта дээр бөмбөлөг. Сүүлийн хэдэн дээр тоо гарна.")
+bubMin = input.int(1, "Min tier · Доод шат", minval = 1, maxval = 3, group = G4, tooltip = "Энэ шатнаас доошхи бөмбөлгийг нууна.")
+bubLoc = input.string("Max-volume price", "Bubble position · Байрлал", options = ["Max-volume price", "Bar high / low"], group = G4, tooltip = "Бөмбөлөг хамгийн их хэмжээтэй үнэ дээр эсвэл баарын орой доор байрлана.")
+bubPal = input.string("Green / Red", "Bubble palette · Өнгө", options = ["Green / Red", "Tier colors"], group = G4, tooltip = "Ногоон улаан эсвэл шатны өнгө.")
+bubBuy = input.color(#4CAF50, "Buy · Авсан", group = G4, tooltip = "Авсан дельтагийн бөмбөлгийн өнгө.")
+bubSell = input.color(#F23645, "Sell · Зассан", group = G4, tooltip = "Зассан дельтагийн бөмбөлгийн өнгө.")
+tblOn = input.bool(true, "Delta table · Хүснэгт", group = G4, tooltip = "Дельта, CVD, тик эх үүсвэрийг хүснэгтээр харуулна.")
+tblPos = input.string("Top Right", "Table position · Байрлал", options = ["Top Right", "Bottom Right", "Top Left", "Bottom Left"], group = G4, tooltip = "Хүснэгтийн байрлал.")
+G4o = "04a · Open Interest · Нээлттэй сонирхол"
+oiOn = input.bool(true, "Highlight OI · OI тэмдэглэх", group = G4o, tooltip = "Зөвхөн крипто перпетуал дээр. XAUUSD дээр харагдахгүй. Дэлгэрэнгүйг OS-Delta цонхноос харна.")
+oiZThr = input.float(2.5, "OI z filter · OI шүүлт", minval = 0.5, step = 0.1, group = G4o, tooltip = "Энэ оверлей дээрх OI тэмдгийн Z шүүлт. 5x дундаж шүүлт нь доод цонхны индикаторт байна.")
+oiPump = input.color(#388E3C, "Pump · Өсөлт", group = G4o, tooltip = "OI огцом өссөн өнгө.")
+oiDump = input.color(#F7525F, "Dump · Бууралт", group = G4o, tooltip = "OI огцом буурсан өнгө.")
 
-// ───────────────────────────── 05 · SIGNALS ─────────────────────────────
-G5 = "05 · Signals (confirmed bars only)"
-sigOn    = input.bool(false, "Enable signals", group = G5)
-sigVW    = input.bool(true, "VWAP ±2σ rejection (band anchor)", group = G5)
-sigPOC   = input.bool(true, "Previous TPO POC reclaim", group = G5)
-sigDelta = input.bool(true, "Require delta confirmation", group = G5)
+// ───────────────────────── 05 · Дохио ─────────────────────────
+G5 = "05 · Signals · Дохио"
+sigOn = input.bool(false, "Enable signals · Дохио асаах", group = G5, tooltip = "Баталгаажсан баар дээрх сонголтот дохио. Анхдагчаар унтарсан.")
+sigVW = input.bool(true, "VWAP ±2σ rejection · ±2 түлхэлт", group = G5, tooltip = "Үнэ ±2 сигмагээс буцахад дохио.")
+sigPOC = input.bool(true, "Previous TPO POC reclaim · POC эргүүлэн авалт", group = G5, tooltip = "Өмнөх TPO POC-ыг хаалт давах эсвэл алдах үед дохио.")
+sigDelta = input.bool(true, "Require delta · Дельта шаардах", group = G5, tooltip = "Дохионд дельтагийн чиглэл таарахыг шаардана.")
 
-// ═════════════════════════════ HELPERS / TYPES ═════════════════════════════
-lblSize(string s) =>
+// ───────────────────────── 06 · Volume profile ─────────────────────────
+G6 = "06 · Volume Profile · Арилжааны хэмжээний профайл"
+vpOn = input.bool(true, "Enable volume profile · Профайл асаах", group = G6, tooltip = "Цаг бүрт өөрийн хэмжээний профайл. TPO-оос тусдаа. Автомат горимд цагийн бүлэг давамгайлна.")
+vpPer = input.string("Daily", "Profile period · Үе", options = ["Session+Day", "Daily", "Weekly", "Monthly", "Yearly"], group = G6, tooltip = "Автомат унтарсан үеийн профайлын үе. Session+Day = Ази, Лондон, Нью-Йорк нэмэх өнөөдөр.")
+vpRowsG = input.int(16, "Rows · Мөр", minval = 8, maxval = 36, group = G6, tooltip = "Профайлын үнийн мөр.")
+vpVaG = input.float(68.0, "Value area % · Үнийн бүс %", minval = 50, maxval = 90, step = 1, group = G6, tooltip = "Хэмжээний үнийн бүсийн хувь. Анхдагч 68.")
+vpPastG = input.int(3, "Past profiles · Өмнөх профайл", minval = 0, maxval = 8, group = G6, tooltip = "Одоогийн профайлоос гадна хэдэн өмнөх үеийг зурах вэ.")
+vpInG = input.color(#6F8FBF, "In VA · Бүсийн дотор", group = G6, tooltip = "Үнийн бүсийн доторх гистограмын өнгө.")
+vpOutG = input.color(#8E9BB3, "Outside · Бүсийн гадна", group = G6, tooltip = "Үнийн бүсийн гаднах гистограмын өнгө.")
+
+// ───────────────────────── Цагийн пресет. Автомат горимын тохиргоо. ─────────────────────────
+G5m = "5m · 5 минут"
+m5Vw = input.string("D+W", "VWAP", options = ["D+W", "W+M", "M+Q+Y", "Y", "Global"], group = G5m, tooltip = "5 минутын VWAP. D+W = өдөр ба долоо хоног. Global = ерөнхий сонголт.")
+m5Lv = input.string("Intra", "Levels · Түвшин", options = ["Intra", "Swing", "Position", "Macro", "Global"], group = G5m, tooltip = "Intra = өдрийн нээлт, PDH, PDL. Swing = PDH/PDL ба PWH/PWL. Position = долоо хоног ба сар. Macro = зөвхөн жил. Global = ерөнхий сэлгүүр.")
+m5Se = input.bool(true, "Sessions · Сешн", group = G5m, tooltip = "Ази, Лондон, Нью-Йоркийн дээд доодыг харуулна.")
+m5Tp = input.string("Daily", "TPO", options = ["Daily", "Weekly", "Monthly", "Off"], group = G5m, tooltip = "TPO-ийн үе. Off = энэ цаг дээр TPO унтраана.")
+m5Tr = input.int(32, "TPO rows · Мөр", minval = 8, maxval = 48, group = G5m, tooltip = "Энэ цаг дээрх TPO мөрийн тоо.")
+m5Th = input.int(3, "TPO history · Өмнөх TPO", minval = 1, maxval = 6, group = G5m, tooltip = "Хэдэн хаагдсан TPO профайл зурах вэ.")
+m5Lb = input.string("Small", "Label size · Шошго", options = ["Tiny", "Small", "Medium", "Normal", "Large"], group = G5m, tooltip = "5 минутын шошгын хэмжээ.")
+m5Ex = input.int(8, "Line extend · Шугамын урт", minval = 1, maxval = 24, group = G5m, tooltip = "Түвшин баруун тийш хэдэн баар сунах вэ.")
+m5Zs = input.float(1.15, "Delta scale · Дельта үржүүлэгч", minval = 0.5, maxval = 3, step = 0.05, group = G5m, tooltip = "1.5, 2.5, 3.5 шатыг үржүүлнэ. Их байх тусам цөөн бөмбөлөг.")
+m5Bm = input.int(2, "Bubble min tier · Бөмбөлгийн шат", minval = 1, maxval = 3, group = G5m, tooltip = "Энэ шатнаас доошхи бөмбөлгийг нууна.")
+m5Vp = input.string("Session+Day", "Volume profile", options = ["Session+Day", "Daily", "Weekly", "Monthly", "Yearly", "Off"], group = G5m, tooltip = "5м дээр Ази, Лондон, Нью-Йорк тус бүрийн профайл нэмэх өнөөдрийн профайл.")
+m5Vr = input.int(14, "VP rows · Мөр", minval = 8, maxval = 28, group = G5m, tooltip = "Хэмжээний профайлын мөр.")
+m5Va = input.float(68, "VP value area %", minval = 50, maxval = 90, step = 1, group = G5m, tooltip = "Хэмжээний үнийн бүсийн хувь.")
+m5Vn = input.int(3, "Past profiles · Өмнөх", minval = 0, maxval = 6, group = G5m, tooltip = "Одоогийн сешнээс гадна хэдэн өмнөх сешний профайл зурах вэ.")
+m5Vc = input.color(#7E9CC4, "VP in VA", group = G5m, tooltip = "5 минутын профайлын бүсийн доторх өнгө.")
+m5Vo = input.color(#A7B3C7, "VP outside", group = G5m, tooltip = "5 минутын профайлын бүсийн гаднах өнгө.")
+
+G1h = "1H · 1 цаг"
+m1Vw = input.string("D+W", "VWAP", options = ["D+W", "W+M", "M+Q+Y", "Y", "Global"], group = G1h, tooltip = "1 цагийн VWAP. Анхдагч өдөр ба долоо хоног.")
+m1Lv = input.string("Intra", "Levels · Түвшин", options = ["Intra", "Swing", "Position", "Macro", "Global"], group = G1h, tooltip = "1 цагийн түвшний багц. Intra = PDH, PDL, өдрийн нээлт.")
+m1Se = input.bool(true, "Sessions · Сешн", group = G1h, tooltip = "Ази, Лондон, Нью-Йорк сешний түвшин.")
+m1Tp = input.string("Daily", "TPO", options = ["Daily", "Weekly", "Monthly", "Off"], group = G1h, tooltip = "1 цагийн TPO үе. Анхдагч өдөр.")
+m1Tr = input.int(28, "TPO rows · Мөр", minval = 8, maxval = 48, group = G1h, tooltip = "1 цагийн TPO мөр.")
+m1Th = input.int(3, "TPO history · Өмнөх TPO", minval = 1, maxval = 6, group = G1h, tooltip = "Хэдэн өдрийн TPO профайл зурах вэ.")
+m1Lb = input.string("Small", "Label size · Шошго", options = ["Tiny", "Small", "Medium", "Normal", "Large"], group = G1h, tooltip = "1 цагийн шошгын хэмжээ.")
+m1Ex = input.int(6, "Line extend · Шугамын урт", minval = 1, maxval = 24, group = G1h, tooltip = "Түвшин баруун тийш хэдэн баар сунах вэ.")
+m1Zs = input.float(1.0, "Delta scale · Дельта үржүүлэгч", minval = 0.5, maxval = 3, step = 0.05, group = G1h, tooltip = "Дельта шатны үржүүлэгч.")
+m1Bm = input.int(1, "Bubble min tier · Бөмбөлгийн шат", minval = 1, maxval = 3, group = G1h, tooltip = "Харагдах бөмбөлгийн доод шат.")
+m1Vp = input.string("Daily", "Volume profile", options = ["Session+Day", "Daily", "Weekly", "Monthly", "Yearly", "Off"], group = G1h, tooltip = "1 цаг дээр өдөр бүрийн хэмжээний профайл, сүүлийн хэдэн өдөр.")
+m1Vr = input.int(16, "VP rows · Мөр", minval = 8, maxval = 28, group = G1h, tooltip = "Өдрийн профайлын мөр.")
+m1Va = input.float(68, "VP value area %", minval = 50, maxval = 90, step = 1, group = G1h, tooltip = "Үнийн бүсийн хувь.")
+m1Vn = input.int(5, "Past profiles · Өмнөх", minval = 0, maxval = 8, group = G1h, tooltip = "Өнөөдрөөс гадна хэдэн өмнөх өдрийн профайл.")
+m1Vc = input.color(#6F8FBF, "VP in VA", group = G1h, tooltip = "1 цагийн профайлын бүсийн доторх өнгө.")
+m1Vo = input.color(#95A3B8, "VP outside", group = G1h, tooltip = "1 цагийн профайлын бүсийн гаднах өнгө.")
+
+G4h = "4H · 4 цаг"
+m4Vw = input.string("W+M", "VWAP", options = ["D+W", "W+M", "M+Q+Y", "Y", "Global"], group = G4h, tooltip = "4 цагийн VWAP. Анхдагч долоо хоног ба сар.")
+m4Lv = input.string("Swing", "Levels · Түвшин", options = ["Intra", "Swing", "Position", "Macro", "Global"], group = G4h, tooltip = "Swing = PDH, PDL, PWH, PWL.")
+m4Se = input.bool(false, "Sessions · Сешн", group = G4h, tooltip = "4 цаг дээр сешний түвшин анхдагчаар унтарсан.")
+m4Tp = input.string("Weekly", "TPO", options = ["Daily", "Weekly", "Monthly", "Off"], group = G4h, tooltip = "4 цагийн TPO үе. Анхдагч долоо хоног.")
+m4Tr = input.int(24, "TPO rows · Мөр", minval = 8, maxval = 48, group = G4h, tooltip = "4 цагийн TPO мөр.")
+m4Th = input.int(3, "TPO history · Өмнөх TPO", minval = 1, maxval = 6, group = G4h, tooltip = "Хэдэн долоо хоногийн TPO зурах вэ.")
+m4Lb = input.string("Medium", "Label size · Шошго", options = ["Tiny", "Small", "Medium", "Normal", "Large"], group = G4h, tooltip = "4 цагийн шошгын хэмжээ.")
+m4Ex = input.int(5, "Line extend · Шугамын урт", minval = 1, maxval = 24, group = G4h, tooltip = "Түвшний шугамын урт.")
+m4Zs = input.float(1.1, "Delta scale · Дельта үржүүлэгч", minval = 0.5, maxval = 3, step = 0.05, group = G4h, tooltip = "Дельта шатны үржүүлэгч.")
+m4Bm = input.int(2, "Bubble min tier · Бөмбөлгийн шат", minval = 1, maxval = 3, group = G4h, tooltip = "Харагдах бөмбөлгийн доод шат.")
+m4Vp = input.string("Weekly", "Volume profile", options = ["Session+Day", "Daily", "Weekly", "Monthly", "Yearly", "Off"], group = G4h, tooltip = "4 цаг дээр долоо хоног бүрийн хэмжээний профайл.")
+m4Vr = input.int(16, "VP rows · Мөр", minval = 8, maxval = 28, group = G4h, tooltip = "Долоо хоногийн профайлын мөр.")
+m4Va = input.float(68, "VP value area %", minval = 50, maxval = 90, step = 1, group = G4h, tooltip = "Үнийн бүсийн хувь.")
+m4Vn = input.int(4, "Past profiles · Өмнөх", minval = 0, maxval = 8, group = G4h, tooltip = "Энэ долоо хоногоос гадна хэдэн өмнөх долоо хоног.")
+m4Vc = input.color(#5E9A72, "VP in VA", group = G4h, tooltip = "4 цагийн профайлын бүсийн доторх өнгө.")
+m4Vo = input.color(#8FB39C, "VP outside", group = G4h, tooltip = "4 цагийн профайлын бүсийн гаднах өнгө.")
+
+Gd = "D · Өдөр"
+mDVw = input.string("M+Q+Y", "VWAP", options = ["D+W", "W+M", "M+Q+Y", "Y", "Global"], group = Gd, tooltip = "Өдрийн чартын VWAP. Анхдагч сар, улирал, жил. Долоо хоногийн чарт ч энэ пресетэд орно.")
+mDLv = input.string("Position", "Levels · Түвшин", options = ["Intra", "Swing", "Position", "Macro", "Global"], group = Gd, tooltip = "Position = долоо хоног ба сарын нээлт, PWH/PWL, сарын өндөр доод. Сешн унтарсан.")
+mDSe = input.bool(false, "Sessions · Сешн", group = Gd, tooltip = "Өдрийн чарт дээр сешн анхдагчаар унтарсан.")
+mDTp = input.string("Monthly", "TPO", options = ["Daily", "Weekly", "Monthly", "Off"], group = Gd, tooltip = "Өдрийн чартын TPO. Анхдагч сар, учир нь өдрийн профайл өдрийн чарт дээр багтахгүй.")
+mDTr = input.int(20, "TPO rows · Мөр", minval = 8, maxval = 40, group = Gd, tooltip = "Өдрийн чартын TPO мөр.")
+mDTh = input.int(4, "TPO history · Өмнөх TPO", minval = 1, maxval = 6, group = Gd, tooltip = "Хэдэн сарын TPO зурах вэ.")
+mDLb = input.string("Medium", "Label size · Шошго", options = ["Tiny", "Small", "Medium", "Normal", "Large"], group = Gd, tooltip = "Өдрийн чартын шошгын хэмжээ.")
+mDEx = input.int(4, "Line extend · Шугамын урт", minval = 1, maxval = 16, group = Gd, tooltip = "Түвшний шугамын урт.")
+mDZs = input.float(1.25, "Delta scale · Дельта үржүүлэгч", minval = 0.5, maxval = 3, step = 0.05, group = Gd, tooltip = "Өдрийн чарт дээр дельтагийн босгыг өндөрсгөнө.")
+mDBm = input.int(2, "Bubble min tier · Бөмбөлгийн шат", minval = 1, maxval = 3, group = Gd, tooltip = "Харагдах бөмбөлгийн доод шат.")
+mDVp = input.string("Monthly", "Volume profile", options = ["Session+Day", "Daily", "Weekly", "Monthly", "Yearly", "Off"], group = Gd, tooltip = "Өдрийн чарт дээр сар бүрийн хэмжээний профайл.")
+mDVr = input.int(14, "VP rows · Мөр", minval = 8, maxval = 24, group = Gd, tooltip = "Сарын профайлын мөр.")
+mDVa = input.float(68, "VP value area %", minval = 50, maxval = 90, step = 1, group = Gd, tooltip = "Үнийн бүсийн хувь.")
+mDVn = input.int(6, "Past profiles · Өмнөх", minval = 0, maxval = 8, group = Gd, tooltip = "Энэ сараас гадна хэдэн өмнөх сар.")
+mDVc = input.color(#C47A4A, "VP in VA", group = Gd, tooltip = "Өдрийн чартын профайлын бүсийн доторх өнгө.")
+mDVo = input.color(#D7A784, "VP outside", group = Gd, tooltip = "Өдрийн чартын профайлын бүсийн гаднах өнгө.")
+
+Gmn = "MN · Сар"
+mMVw = input.string("Y", "VWAP", options = ["D+W", "W+M", "M+Q+Y", "Y", "Global"], group = Gmn, tooltip = "Сарын чартын VWAP. Анхдагч зөвхөн жил.")
+mMLv = input.string("Macro", "Levels · Түвшин", options = ["Intra", "Swing", "Position", "Macro", "Global"], group = Gmn, tooltip = "Macro = жилийн нээлт ба өмнөх жилийн өндөр доод. Сешн, өдрийн түвшин унтарсан.")
+mMSe = input.bool(false, "Sessions · Сешн", group = Gmn, tooltip = "Сарын чарт дээр сешн унтарсан.")
+mMTp = input.string("Off", "TPO", options = ["Daily", "Weekly", "Monthly", "Off"], group = Gmn, tooltip = "Сарын чарт дээр TPO анхдагчаар унтарсан. Дотоод профайл барих доод цаг байхгүй.")
+mMTr = input.int(12, "TPO rows · Мөр", minval = 8, maxval = 24, group = Gmn, tooltip = "Хэрэв TPO ассан бол мөрийн тоо.")
+mMTh = input.int(2, "TPO history · Өмнөх TPO", minval = 1, maxval = 4, group = Gmn, tooltip = "Сарын чарт дээрх TPO-ийн тоо.")
+mMLb = input.string("Medium", "Label size · Шошго", options = ["Tiny", "Small", "Medium", "Normal", "Large"], group = Gmn, tooltip = "Сарын чартын шошгын хэмжээ.")
+mMEx = input.int(3, "Line extend · Шугамын урт", minval = 1, maxval = 12, group = Gmn, tooltip = "Түвшний шугамын урт.")
+mMZs = input.float(1.5, "Delta scale · Дельта үржүүлэгч", minval = 0.5, maxval = 3, step = 0.05, group = Gmn, tooltip = "Сарын чарт дээр зөвхөн хүчтэй дельта үлдэнэ.")
+mMBm = input.int(3, "Bubble min tier · Бөмбөлгийн шат", minval = 1, maxval = 3, group = Gmn, tooltip = "Зөвхөн 3-р шатын бөмбөлөг.")
+mMVp = input.string("Yearly", "Volume profile", options = ["Session+Day", "Daily", "Weekly", "Monthly", "Yearly", "Off"], group = Gmn, tooltip = "Сарын чарт дээр жил бүрийн хэмжээний профайл.")
+mMVr = input.int(12, "VP rows · Мөр", minval = 8, maxval = 20, group = Gmn, tooltip = "Жилийн профайлын мөр.")
+mMVa = input.float(68, "VP value area %", minval = 50, maxval = 90, step = 1, group = Gmn, tooltip = "Үнийн бүсийн хувь.")
+mMVn = input.int(3, "Past profiles · Өмнөх", minval = 0, maxval = 6, group = Gmn, tooltip = "Энэ жилээс гадна хэдэн өмнөх жил.")
+mMVc = input.color(#C45B64, "VP in VA", group = Gmn, tooltip = "Сарын чартын профайлын бүсийн доторх өнгө.")
+mMVo = input.color(#D9A0A6, "VP outside", group = Gmn, tooltip = "Сарын чартын профайлын бүсийн гаднах өнгө.")
+
+// ── Цагийн ангилал. 1м–30м → 5м, 1ц–3ц → 1ц, 4ц–12ц → 4ц, өдөр/долоо хоног → өдөр, сар → сар. ──
+string perNow = timeframe.period
+bool isMnTf = str.endswith(perNow, "M")
+bool isDayTf = str.endswith(perNow, "D") or str.endswith(perNow, "W") or timeframe.isdaily or timeframe.isweekly
+int tfSec = timeframe.in_seconds()
+string tfKey = isMnTf ? "MN" : isDayTf ? "D" : tfSec >= 14400 ? "4H" : tfSec >= 3600 ? "1H" : "5m"
+bool light = themeIn == "Light"
+
+pickS(string k, string v5, string v1, string v4, string vD, string vM) =>
+    k == "1H" ? v1 : k == "4H" ? v4 : k == "D" ? vD : k == "MN" ? vM : v5
+pickI(string k, int v5, int v1, int v4, int vD, int vM) =>
+    k == "1H" ? v1 : k == "4H" ? v4 : k == "D" ? vD : k == "MN" ? vM : v5
+pickF(string k, float v5, float v1, float v4, float vD, float vM) =>
+    k == "1H" ? v1 : k == "4H" ? v4 : k == "D" ? vD : k == "MN" ? vM : v5
+pickB(string k, bool v5, bool v1, bool v4, bool vD, bool vM) =>
+    k == "1H" ? v1 : k == "4H" ? v4 : k == "D" ? vD : k == "MN" ? vM : v5
+pickC(string k, color v5, color v1, color v4, color vD, color vM) =>
+    k == "1H" ? v1 : k == "4H" ? v4 : k == "D" ? vD : k == "MN" ? vM : v5
+
+string vwP = autoAdapt ? pickS(tfKey, m5Vw, m1Vw, m4Vw, mDVw, mMVw) : "Global"
+bool gvw = not autoAdapt or vwP == "Global"
+bool eShowD = gvw ? showDV : vwP == "D+W"
+bool eShowW = gvw ? showWV : (vwP == "D+W" or vwP == "W+M")
+bool eShowM = gvw ? showMV : (vwP == "W+M" or vwP == "M+Q+Y")
+bool eShowQ = gvw ? showQV : vwP == "M+Q+Y"
+bool eShowY = gvw ? showYV : (vwP == "M+Q+Y" or vwP == "Y")
+string eAnchor = (not autoAdapt or vwP == "Global") ? bandAnchor : vwP == "Y" ? "Yearly" : vwP == "M+Q+Y" ? "Monthly" : vwP == "W+M" ? "Weekly" : "Daily"
+bool eR7 = autoAdapt ? (tfKey == "5m" or tfKey == "1H") : r7On
+bool eR30 = autoAdapt ? tfKey == "4H" : r30On
+bool eR90 = autoAdapt ? tfKey == "D" : r90On
+bool eR365 = autoAdapt ? tfKey == "MN" : r365On
+
+string lvlP = autoAdapt ? pickS(tfKey, m5Lv, m1Lv, m4Lv, mDLv, mMLv) : "Global"
+bool gLvl = not autoAdapt or lvlP == "Global"
+bool eDOpen = gLvl ? dOpenOn : lvlP == "Intra"
+bool eDHL = gLvl ? dPrevHL : (lvlP == "Intra" or lvlP == "Swing")
+bool eDMid = gLvl and dPrevMd
+bool eDCls = gLvl and dPrevC
+bool eDCur = gLvl and dCurHL
+bool eDNak = gLvl and dNaked
+bool eWOpen = gLvl ? wOpenOn : lvlP == "Position"
+bool eWHL = gLvl ? wPrevHL : (lvlP == "Swing" or lvlP == "Position")
+bool eWMid = gLvl and wPrevMd
+bool eWCls = gLvl and wPrevC
+bool eWCur = gLvl and wCurHL
+bool eWNak = gLvl and wNaked
+bool eMOpen = gLvl ? mOpenOn : lvlP == "Position"
+bool eMHL = gLvl ? mPrevHL : lvlP == "Position"
+bool eMMid = gLvl and mPrevMd
+bool eMCls = gLvl and mPrevC
+bool eMCur = gLvl and mCurHL
+bool eMNak = gLvl and mNaked
+bool eQOpen = gLvl and qOpenOn
+bool eQHL = gLvl and qPrevHL
+bool eQMid = gLvl and qPrevMd
+bool eQCls = gLvl and qPrevC
+bool eQCur = gLvl and qCurHL
+bool eQNak = gLvl and qNaked
+bool eYOpen = gLvl ? yOpenOn : lvlP == "Macro"
+bool eYHL = gLvl ? yPrevHL : lvlP == "Macro"
+bool eYMid = gLvl and yPrevMd
+bool eYCls = gLvl and yPrevC
+bool eYCur = gLvl and yCurHL
+bool eYNak = gLvl and yNaked
+bool eSess = autoAdapt ? pickB(tfKey, m5Se, m1Se, m4Se, mDSe, mMSe) : true
+bool eAsia = autoAdapt ? eSess : asiaOn
+bool eLon = autoAdapt ? eSess : lonOn
+bool eNy = autoAdapt ? eSess : nyOn
+
+string tpoSel = autoAdapt ? pickS(tfKey, m5Tp, m1Tp, m4Tp, mDTp, mMTp) : "Use"
+bool eTpoOn = autoAdapt ? tpoSel != "Off" : tpoOn
+string eTpoPer = autoAdapt ? (tpoSel == "Off" ? "Daily" : tpoSel) : tpoTFin
+int eTpoRows = math.max(8, math.min(80, autoAdapt ? pickI(tfKey, m5Tr, m1Tr, m4Tr, mDTr, mMTr) : tpoRows))
+int eTpoHist = math.max(1, math.min(6, autoAdapt ? pickI(tfKey, m5Th, m1Th, m4Th, mDTh, mMTh) : tpoHist))
+string eLblName = autoAdapt ? pickS(tfKey, m5Lb, m1Lb, m4Lb, mDLb, mMLb) : lblSizeIn
+int eExt = math.max(1, autoAdapt ? pickI(tfKey, m5Ex, m1Ex, m4Ex, mDEx, mMEx) : klOff)
+float eZ = autoAdapt ? pickF(tfKey, m5Zs, m1Zs, m4Zs, mDZs, mMZs) : 1.0
+int eBubMin = autoAdapt ? pickI(tfKey, m5Bm, m1Bm, m4Bm, mDBm, mMBm) : bubMin
+string vpSel = autoAdapt ? pickS(tfKey, m5Vp, m1Vp, m4Vp, mDVp, mMVp) : vpPer
+bool eVpOn = autoAdapt ? vpSel != "Off" : vpOn
+int eVpRows = math.max(8, math.min(36, autoAdapt ? pickI(tfKey, m5Vr, m1Vr, m4Vr, mDVr, mMVr) : vpRowsG))
+float eVpVa = (autoAdapt ? pickF(tfKey, m5Va, m1Va, m4Va, mDVa, mMVa) : vpVaG) / 100.0
+int eVpPast = math.max(0, math.min(8, autoAdapt ? pickI(tfKey, m5Vn, m1Vn, m4Vn, mDVn, mMVn) : vpPastG))
+color eVpIn = autoAdapt ? pickC(tfKey, m5Vc, m1Vc, m4Vc, mDVc, mMVc) : vpInG
+color eVpOut = autoAdapt ? pickC(tfKey, m5Vo, m1Vo, m4Vo, mDVo, mMVo) : vpOutG
+int eDevOff = autoAdapt ? math.max(8, eExt + 8) : devOff
+
+color eColD = light ? #3E4654 : colDV
+color eColW = colWV
+color eColM = colMV
+color eColQ = colQV
+color eColY = colYV
+color eYCol = light ? #1E222D : yCol
+color eRoll = light ? #3E4654 : rCol
+color labBg = light ? color.new(#FFFFFF, 16) : color.new(#141820, 20)
+color ink = light ? #1C2030 : #E6E8EE
+color tabBg = light ? color.new(#FFFFFF, 6) : color.new(#12141A, 14)
+color tabHd = light ? #EEF1F6 : #1C2230
+color tabBd = light ? #D5DAE3 : #3A4254
+
+lblSzOf(string s) =>
     switch s
-        "Tiny"  => size.tiny
+        "Tiny" => size.tiny
         "Small" => size.small
         "Large" => size.large
         => size.normal
+string lblSz = lblSzOf(eLblName)
+
+fmtPrice(float p) =>
+    string s = str.tostring(p, format.mintick)
+    int dot = str.pos(s, ".")
+    string whole = dot >= 0 ? str.substring(s, 0, dot) : s
+    string frac = dot >= 0 ? str.substring(s, dot) : ""
+    bool neg = str.startswith(whole, "-")
+    string digs = neg ? str.substring(whole, 1) : whole
+    string out = ""
+    int len = str.length(digs)
+    if len > 0
+        for i = 0 to len - 1
+            int idx = len - 1 - i
+            string ch = str.substring(digs, idx, idx + 1)
+            if i > 0 and i % 3 == 0
+                out := "," + out
+            out := ch + out
+    else
+        out := "0"
+    (neg ? "-" : "") + out + frac
+
+fmtVol(float v) =>
+    float a = math.abs(nz(v))
+    string sgn = v < 0 ? "-" : ""
+    string b = a >= 1000000 ? str.tostring(a / 1000000.0, "#.#") + "M" : a >= 1000 ? str.tostring(a / 1000.0, "#.#") + "K" : str.tostring(a, format.volume)
+    sgn + b
 
 clampX(int x) =>
     math.max(x, bar_index - 4990)
 
-fmtP(float p) =>
-    str.tostring(p, format.mintick)
-
-// A level to draw on the last bar: optional line + right-edge label.
+// ── Төрлүүд ──
 type Lvl
-    float  price
+    float price
     string txt
-    color  col
-    int    x1
-    int    x2
+    string pre
+    string kind
+    color col
+    int x2
     string lstyle
-    int    lwidth
-    bool   drawLine
-    int    grp
-    int    rank
+    int lwidth
+    bool drawLine
+    int grp
+    int rank
+    string tip
 
-addLvl(Lvl[] a, float p, string t, color c, int x1, int x2, string st, int w, bool dl, int g, int r) =>
-    if not na(p)
-        a.push(Lvl.new(p, t, c, x1, x2, st, w, dl, g, r))
+type VW
+    float sPV = 0.0
+    float sPV2 = 0.0
+    float sV = 0.0
+    float vw = na
+    float sd = na
+    float pvw = na
+    float psd = na
+    int start = 0
+    int pStart = 0
+    int pEnd = -1
 
-// Untouched prices (naked opens / naked POCs)
 type Naked
     float[] p
-    int[]   x
+    int[] x
+
+type KL
+    float op = na
+    float cH = na
+    float cL = na
+    int start = 0
+    int pstart = 0
+
+type Sess
+    float h = na
+    float l = na
+    int start = 0
+
+type TpoS
+    float[] curH
+    float[] curL
+    float blkH = na
+    float blkL = na
+    int lastBlk = na
+    float poc = na
+    float vah = na
+    float val = na
+    bool ready = false
+
+method update(VW s, bool isNew, float src, float v) =>
+    if isNew
+        s.pvw := s.vw
+        s.psd := s.sd
+        s.pEnd := bar_index > 0 ? bar_index - 1 : -1
+        s.pStart := s.start
+        s.start := bar_index
+        s.sPV := 0.0
+        s.sPV2 := 0.0
+        s.sV := 0.0
+    s.sPV := s.sPV + src * v
+    s.sPV2 := s.sPV2 + src * src * v
+    s.sV := s.sV + v
+    s.vw := s.sV > 0 ? s.sPV / s.sV : src
+    s.sd := s.sV > 0 ? math.sqrt(math.max(s.sPV2 / s.sV - s.vw * s.vw, 0.0)) : 0.0
+    s
 
 method addN(Naked n, float price, int x, int cap) =>
     if not na(price) and cap > 0
@@ -240,244 +525,6 @@ method testN(Naked n, float hi, float lo) =>
 newNaked() =>
     Naked.new(array.new<float>(), array.new<int>())
 
-float atr14 = ta.atr(14)
-string lblSz = lblSize(lblSizeIn)
-float vol = na(volume) or volume <= 0 ? 1.0 : volume
-
-// ═════════════════════════════ 1 · VWAP SUITE ═════════════════════════════
-type VW
-    float sPV = 0.0
-    float sPV2 = 0.0
-    float sV = 0.0
-    float vw = na
-    float sd = na
-    float pvw = na
-    float psd = na
-    int   start = 0
-
-method update(VW s, bool isNew, float src, float v) =>
-    if isNew
-        s.pvw := s.vw
-        s.psd := s.sd
-        s.start := bar_index
-        s.sPV := 0.0
-        s.sPV2 := 0.0
-        s.sV := 0.0
-    s.sPV := s.sPV + src * v
-    s.sPV2 := s.sPV2 + src * src * v
-    s.sV := s.sV + v
-    s.vw := s.sV > 0 ? s.sPV / s.sV : src
-    s.sd := s.sV > 0 ? math.sqrt(math.max(s.sPV2 / s.sV - s.vw * s.vw, 0.0)) : 0.0
-    s
-
-bool newD = timeframe.change("D")
-bool newW = timeframe.change("W")
-bool newM = timeframe.change("M")
-bool newQ = timeframe.change("3M")
-bool newY = timeframe.change("12M")
-
-var VW vD = VW.new()
-var VW vW = VW.new()
-var VW vM = VW.new()
-var VW vQ = VW.new()
-var VW vY = VW.new()
-vD.update(newD, vwSrc, vol)
-vW.update(newW, vwSrc, vol)
-vM.update(newM, vwSrc, vol)
-vQ.update(newQ, vwSrc, vol)
-vY.update(newY, vwSrc, vol)
-
-float dVW = vD.vw
-float wVW = vW.vw
-float mVW = vM.vw
-float qVW = vQ.vw
-float yVW = vY.vw
-
-plot(showDV and not newD ? dVW : na, "Daily VWAP", colDV, 1, dStyle == "Circles" ? plot.style_circles : plot.style_linebr)
-plot(showWV and not newW ? wVW : na, "Weekly VWAP", colWV, 1, plot.style_linebr)
-plot(showMV and not newM ? mVW : na, "Monthly VWAP", colMV, 1, plot.style_linebr)
-plot(showQV and not newQ ? qVW : na, "Quarterly VWAP", colQV, 1, plot.style_linebr)
-plot(showYV and not newY ? yVW : na, "Yearly VWAP", colYV, 1, plot.style_linebr)
-
-// Standard-deviation bands for one selected anchor (like the original "Anchored to Period")
-float bVW = switch bandAnchor
-    "Weekly"    => wVW
-    "Monthly"   => mVW
-    "Quarterly" => qVW
-    "Yearly"    => yVW
-    => dVW
-float bSD = switch bandAnchor
-    "Weekly"    => vW.sd
-    "Monthly"   => vM.sd
-    "Quarterly" => vQ.sd
-    "Yearly"    => vY.sd
-    => vD.sd
-bool bNew = switch bandAnchor
-    "Weekly"    => newW
-    "Monthly"   => newM
-    "Quarterly" => newQ
-    "Yearly"    => newY
-    => newD
-bool bShow = bandsOn and not bNew
-float bU1 = bVW + bSD * m1
-float bL1 = bVW - bSD * m1
-float bU2 = bVW + bSD * m2
-float bL2 = bVW - bSD * m2
-float bU3 = bVW + bSD * m3
-float bL3 = bVW - bSD * m3
-pU1 = plot(bShow and b1On ? bU1 : na, "Band +1σ", bandLineCol, 1, plot.style_linebr)
-pL1 = plot(bShow and b1On ? bL1 : na, "Band -1σ", bandLineCol, 1, plot.style_linebr)
-pU2 = plot(bShow and b2On ? bU2 : na, "Band +2σ", bandLineCol, 1, plot.style_linebr)
-pL2 = plot(bShow and b2On ? bL2 : na, "Band -2σ", bandLineCol, 1, plot.style_linebr)
-pU3 = plot(bShow and b3On ? bU3 : na, "Band +3σ", bandLineCol, 1, plot.style_linebr)
-pL3 = plot(bShow and b3On ? bL3 : na, "Band -3σ", bandLineCol, 1, plot.style_linebr)
-fill(pU1, pL1, f1On ? bandFillCol : na, "Fill ±1σ")
-fill(pU2, pU1, f2On ? bandFillCol : na, "Fill +2σ")
-fill(pL1, pL2, f2On ? bandFillCol : na, "Fill -2σ")
-fill(pU3, pU2, f3On ? bandFillCol : na, "Fill +3σ")
-fill(pL2, pL3, f3On ? bandFillCol : na, "Fill -3σ")
-
-// Rolling VWAPs from completed daily bars (non-repainting: [1] + lookahead_on)
-rollVW(int n) =>
-    float sv = math.sum(nz(volume), n)
-    float spv = math.sum(hlc3 * nz(volume), n)
-    sv > 0 ? spv / sv : na
-[r7, r30, r90, r365] = request.security(syminfo.tickerid, "D", [rollVW(7)[1], rollVW(30)[1], rollVW(90)[1], rollVW(365)[1]], lookahead = barmerge.lookahead_on)
-plot(r7On ? r7 : na, "Rolling 7D VWAP", rCol, 1)
-plot(r30On ? r30 : na, "Rolling 30D VWAP", rCol, 1)
-plot(r90On ? r90 : na, "Rolling 90D VWAP", rCol, 1)
-plot(r365On ? r365 : na, "Rolling 365D VWAP", rCol, 1)
-
-// ═════════════════════════════ 2 · TPO ═════════════════════════════
-string tpoTF = switch tpoTFin
-    "Weekly"  => "W"
-    "Monthly" => "M"
-    => "D"
-string tpoPrevTag = tpoTFin == "Weekly" ? "PW" : tpoTFin == "Monthly" ? "PM" : "PD"
-string tpoCurTag  = tpoTFin == "Weekly" ? "CW" : tpoTFin == "Monthly" ? "CM" : "CD"
-bool tpoActive = tpoOn and timeframe.in_seconds(timeframe.period) < timeframe.in_seconds(tpoTF)
-
-// Counts TPO periods per price row; returns histogram + POC/VA row indices.
-tpoCalc(float[] hs, float[] ls, int rows, float vaPct) =>
-    float[] cnt = array.new<float>(rows, 0.0)
-    float lo = ls.size() > 0 ? ls.min() : na
-    float hi = hs.size() > 0 ? hs.max() : na
-    float step = na(hi) or na(lo) ? na : math.max((hi - lo) / rows, syminfo.mintick)
-    int pocI = 0
-    int vahI = 0
-    int valI = 0
-    if not na(step)
-        for i = 0 to hs.size() - 1
-            int b0 = math.max(0, math.min(rows - 1, int(math.floor((ls.get(i) - lo) / step))))
-            int b1 = math.max(0, math.min(rows - 1, int(math.floor((hs.get(i) - lo) / step))))
-            for b = b0 to b1
-                cnt.set(b, cnt.get(b) + 1.0)
-        float mx = cnt.max()
-        // POC = highest count; ties resolved toward the profile middle
-        float bestDist = 1e10
-        for b = 0 to rows - 1
-            if cnt.get(b) == mx
-                float dist = math.abs(b - (rows - 1) / 2.0)
-                if dist < bestDist
-                    bestDist := dist
-                    pocI := b
-        float total = cnt.sum()
-        float acc = cnt.get(pocI)
-        int up = pocI
-        int dn = pocI
-        while acc < total * vaPct and (up < rows - 1 or dn > 0)
-            float nu = up < rows - 1 ? cnt.get(up + 1) : -1.0
-            float nd = dn > 0 ? cnt.get(dn - 1) : -1.0
-            if nu >= nd
-                up += 1
-                acc += nu
-            else
-                dn -= 1
-                acc += nd
-        vahI := up
-        valI := dn
-    [cnt, lo, step, pocI, vahI, valI]
-
-var float[] curH = array.new<float>()
-var float[] curL = array.new<float>()
-var float blkH = na
-var float blkL = na
-var int lastBlk = na
-var int curStart = 0
-var float[] prvCnt = array.new<float>()
-var float prvLo = na
-var float prvStep = na
-var int prvPocI = 0
-var int prvVahI = 0
-var int prvValI = 0
-var int prvStart = na
-var int prvEnd = na
-var float prvPOC = na
-var float prvVAH = na
-var float prvVAL = na
-var float postH = na
-var float postL = na
-var Naked nPOC = newNaked()
-
-int blkId = int(math.floor(time / (tpoMin * 60000.0)))
-bool tpoNew = timeframe.change(tpoTF)
-
-if tpoActive
-    if tpoNew
-        if not na(blkH)
-            curH.push(blkH)
-            curL.push(blkL)
-        if curH.size() > 0
-            [c_, lo_, st_, pI, hI, lI] = tpoCalc(curH, curL, tpoRows, tpoVA)
-            prvCnt := c_
-            prvLo := lo_
-            prvStep := st_
-            prvPocI := pI
-            prvVahI := hI
-            prvValI := lI
-            prvStart := curStart
-            prvEnd := bar_index - 1
-            prvPOC := lo_ + st_ * (pI + 0.5)
-            prvVAH := lo_ + st_ * (hI + 1)
-            prvVAL := lo_ + st_ * lI
-            nPOC.addN(prvPOC, prvEnd, nPocMax + 1)
-        curH.clear()
-        curL.clear()
-        curStart := bar_index
-        blkH := high
-        blkL := low
-        lastBlk := blkId
-        postH := high
-        postL := low
-    else
-        if na(lastBlk) or blkId != lastBlk
-            if not na(blkH)
-                curH.push(blkH)
-                curL.push(blkL)
-            blkH := high
-            blkL := low
-            lastBlk := blkId
-        else
-            blkH := math.max(blkH, high)
-            blkL := math.min(blkL, low)
-        postH := na(postH) ? high : math.max(postH, high)
-        postL := na(postL) ? low : math.min(postL, low)
-    nPOC.testN(high, low)
-
-// ═════════════════════════════ 3 · KEY LEVELS ═════════════════════════════
-[dO, dPH, dPL, dPC] = request.security(syminfo.tickerid, "D", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
-[wO, wPH, wPL, wPC] = request.security(syminfo.tickerid, "W", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
-[mO, mPH, mPL, mPC] = request.security(syminfo.tickerid, "M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
-[qO, qPH, qPL, qPC] = request.security(syminfo.tickerid, "3M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
-[yO, yPH, yPL, yPC] = request.security(syminfo.tickerid, "12M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
-
-type KL
-    float op = na
-    float cH = na
-    float cL = na
-    int   start = 0
-    int   pstart = 0
-
 method roll(KL k, bool isNew, float htfOpen, Naked nk, int cap) =>
     if isNew
         if not na(k.op)
@@ -493,6 +540,348 @@ method roll(KL k, bool isNew, float htfOpen, Naked nk, int cap) =>
     nk.testN(high, low)
     k
 
+method track(Sess s, bool inS, bool inPrev) =>
+    if inS and not inPrev
+        s.h := high
+        s.l := low
+        s.start := bar_index
+    else if inS
+        s.h := math.max(s.h, high)
+        s.l := math.min(s.l, low)
+    s
+
+// TPO: үнийн мөр бүрт хэдэн блок хүрснийг тоолж POC, VAH, VAL гаргана.
+tpoCalc(float[] hs, float[] ls, int rows, float vaPct) =>
+    float[] cnt = array.new<float>(rows, 0.0)
+    float lo = ls.size() > 0 ? ls.min() : na
+    float hi = hs.size() > 0 ? hs.max() : na
+    float step = na(hi) or na(lo) ? na : math.max((hi - lo) / rows, syminfo.mintick)
+    int pocI = 0
+    int vahI = 0
+    int valI = 0
+    if not na(step)
+        for i = 0 to hs.size() - 1
+            int b0 = math.max(0, math.min(rows - 1, int(math.floor((ls.get(i) - lo) / step))))
+            int b1 = math.max(0, math.min(rows - 1, int(math.floor((hs.get(i) - lo) / step))))
+            for b = b0 to b1
+                cnt.set(b, cnt.get(b) + 1.0)
+        float mx = cnt.max()
+        float bestDist = 1e10
+        for b = 0 to rows - 1
+            if cnt.get(b) == mx
+                float dist = math.abs(b - (rows - 1) / 2.0)
+                if dist < bestDist
+                    bestDist := dist
+                    pocI := b
+        float total = cnt.sum()
+        float acc = cnt.get(pocI)
+        int up = pocI
+        int dn = pocI
+        while acc < total * vaPct and (up < rows - 1 or dn > 0)
+            float nu = up < rows - 1 ? cnt.get(up + 1) : -1.0
+            float nd = dn > 0 ? cnt.get(dn - 1) : -1.0
+            if nu >= nd and up < rows - 1
+                up += 1
+                acc += math.max(nu, 0.0)
+            else if dn > 0
+                dn -= 1
+                acc += math.max(nd, 0.0)
+            else
+                break
+        vahI := up
+        valI := dn
+    [cnt, lo, step, pocI, vahI, valI]
+
+method step(TpoS s, bool isNew, int blk, int rows, float va) =>
+    if isNew
+        if not na(s.blkH)
+            s.curH.push(s.blkH)
+            s.curL.push(s.blkL)
+        if s.curH.size() > 0
+            [c_, lo_, st_, pI, hI, lI] = tpoCalc(s.curH, s.curL, rows, va)
+            s.poc := lo_ + st_ * (pI + 0.5)
+            s.vah := lo_ + st_ * (hI + 1)
+            s.val := lo_ + st_ * lI
+            s.ready := true
+        s.curH.clear()
+        s.curL.clear()
+        s.blkH := high
+        s.blkL := low
+        s.lastBlk := blk
+    else
+        if na(s.lastBlk) or blk != s.lastBlk
+            if not na(s.blkH)
+                s.curH.push(s.blkH)
+                s.curL.push(s.blkL)
+            s.blkH := high
+            s.blkL := low
+            s.lastBlk := blk
+        else
+            s.blkH := math.max(s.blkH, high)
+            s.blkL := math.min(s.blkL, low)
+    s
+
+// Зургийн сав. Сүүлийн баар дээр цэвэрлээд дахин зурна.
+var line[] gLines = array.new<line>()
+var label[] gLabels = array.new<label>()
+var box[] gBoxes = array.new<box>()
+var float[] hBins = array.new<float>()
+var int[] hN = array.new<int>()
+var float[] hLo = array.new<float>()
+var float[] hStep = array.new<float>()
+var int[] hPocI = array.new<int>()
+var int[] hVahI = array.new<int>()
+var int[] hValI = array.new<int>()
+var int[] hX0 = array.new<int>()
+var int[] hX1 = array.new<int>()
+var float[] hPoc = array.new<float>()
+var float[] hVah = array.new<float>()
+var float[] hVal = array.new<float>()
+var float[] spTop = array.new<float>()
+var float[] spBot = array.new<float>()
+var int[] spX0 = array.new<int>()
+var int[] spX1 = array.new<int>()
+var float[] spMax = array.new<float>()
+var float[] spMin = array.new<float>()
+var float[] bH = array.new<float>()
+var float[] bL = array.new<float>()
+var float[] bV = array.new<float>()
+var int[] bX = array.new<int>()
+var int[] bSes = array.new<int>()
+var int[] bDay = array.new<int>()
+var int[] bWeek = array.new<int>()
+var int[] bMon = array.new<int>()
+var int[] bYear = array.new<int>()
+var int[] bubX = array.new<int>()
+var float[] bubY = array.new<float>()
+var float[] bubDlt = array.new<float>()
+var int[] bubS = array.new<int>()
+var TpoS tW = TpoS.new(array.new<float>(), array.new<float>())
+var TpoS tM = TpoS.new(array.new<float>(), array.new<float>())
+
+saveHist(float[] cnt, float lo, float step, int pI, int hI, int lI, int x0, int x1, float poc, float vah, float val) =>
+    int r = cnt.size()
+    if r > 0 and not na(lo)
+        for i = 0 to r - 1
+            hBins.push(cnt.get(i))
+        hN.push(r)
+        hLo.push(lo)
+        hStep.push(step)
+        hPocI.push(pI)
+        hVahI.push(hI)
+        hValI.push(lI)
+        hX0.push(x0)
+        hX1.push(x1)
+        hPoc.push(poc)
+        hVah.push(vah)
+        hVal.push(val)
+        while hN.size() > 8
+            int drop = hN.shift()
+            hLo.shift()
+            hStep.shift()
+            hPocI.shift()
+            hVahI.shift()
+            hValI.shift()
+            hX0.shift()
+            hX1.shift()
+            hPoc.shift()
+            hVah.shift()
+            hVal.shift()
+            if drop > 0 and hBins.size() >= drop
+                for j = 0 to drop - 1
+                    hBins.shift()
+    r
+
+pushZone(float top, float bot, int x0) =>
+    spTop.push(top)
+    spBot.push(bot)
+    spX0.push(x0)
+    spX1.push(0)
+    spMax.push(high)
+    spMin.push(low)
+    while spTop.size() > 24
+        spTop.shift()
+        spBot.shift()
+        spX0.shift()
+        spX1.shift()
+        spMax.shift()
+        spMin.shift()
+    0
+
+saveSingles(float[] cnt, float lo, float step) =>
+    int rows = cnt.size()
+    if singlesOn and rows > 2 and not na(step)
+        int b = 1
+        while b < rows - 1
+            if cnt.get(b) == 1.0
+                int e = b
+                while e + 1 < rows - 1 and cnt.get(e + 1) == 1.0
+                    e += 1
+                pushZone(lo + step * (e + 1), lo + step * b, bar_index > 0 ? bar_index - 1 : bar_index)
+                b := e + 1
+            else
+                b += 1
+    0
+
+float atr14 = ta.atr(14)
+float vol = na(volume) or volume <= 0 ? 1.0 : volume
+
+// ── 1 · VWAP. Дундаж шугам нь VWAP, ±1σ нь VAH/VAL. ──
+bool newD = timeframe.change("D")
+bool newW = timeframe.change("W")
+bool newM = timeframe.change("M")
+bool newQ = timeframe.change("3M")
+bool newY = timeframe.change("12M")
+var VW vD = VW.new()
+var VW vW = VW.new()
+var VW vM = VW.new()
+var VW vQ = VW.new()
+var VW vY = VW.new()
+vD.update(newD, vwSrc, vol)
+vW.update(newW, vwSrc, vol)
+vM.update(newM, vwSrc, vol)
+vQ.update(newQ, vwSrc, vol)
+vY.update(newY, vwSrc, vol)
+float dVW = vD.vw
+float wVW = vW.vw
+float mVW = vM.vw
+float qVW = vQ.vw
+float yVW = vY.vw
+bool drawVw = not lblOnly
+plot(drawVw and eShowD and not newD ? dVW : na, "Daily VWAP", eColD, 1, dStyle == "Circles" ? plot.style_circles : plot.style_linebr)
+plot(drawVw and eShowW and not newW ? wVW : na, "Weekly VWAP", eColW, 1, plot.style_linebr)
+plot(drawVw and eShowM and not newM ? mVW : na, "Monthly VWAP", eColM, 1, plot.style_linebr)
+plot(drawVw and eShowQ and not newQ ? qVW : na, "Quarterly VWAP", eColQ, 1, plot.style_linebr)
+plot(drawVw and eShowY and not newY ? yVW : na, "Yearly VWAP", eColY, 1, plot.style_linebr)
+
+float bVW = switch eAnchor
+    "Weekly" => wVW
+    "Monthly" => mVW
+    "Quarterly" => qVW
+    "Yearly" => yVW
+    => dVW
+float bSD = switch eAnchor
+    "Weekly" => vW.sd
+    "Monthly" => vM.sd
+    "Quarterly" => vQ.sd
+    "Yearly" => vY.sd
+    => vD.sd
+bool bNew = switch eAnchor
+    "Weekly" => newW
+    "Monthly" => newM
+    "Quarterly" => newQ
+    "Yearly" => newY
+    => newD
+bool bShow = drawVw and bandsOn and not bNew
+float bU1 = bVW + bSD * m1
+float bL1 = bVW - bSD * m1
+float bU2 = bVW + bSD * m2
+float bL2 = bVW - bSD * m2
+float bU3 = bVW + bSD * m3
+float bL3 = bVW - bSD * m3
+color band1 = color.new(bandLineCol, light ? 25 : 35)
+color band2 = color.new(bandLineCol, light ? 45 : 60)
+pU1 = plot(bShow and b1On ? bU1 : na, "Band +1σ VAH", band1, 1, plot.style_linebr)
+pL1 = plot(bShow and b1On ? bL1 : na, "Band -1σ VAL", band1, 1, plot.style_linebr)
+pU2 = plot(bShow and b2On ? bU2 : na, "Band +2σ", band2, 1, plot.style_circles)
+pL2 = plot(bShow and b2On ? bL2 : na, "Band -2σ", band2, 1, plot.style_circles)
+pU3 = plot(bShow and b3On ? bU3 : na, "Band +3σ", band2, 1, plot.style_circles)
+pL3 = plot(bShow and b3On ? bL3 : na, "Band -3σ", band2, 1, plot.style_circles)
+fill(pU1, pL1, f1On and drawVw ? bandFillCol : na, "Fill ±1σ")
+fill(pU2, pU1, f2On and drawVw ? bandFillCol : na, "Fill +2σ")
+fill(pL1, pL2, f2On and drawVw ? bandFillCol : na, "Fill -2σ")
+fill(pU3, pU2, f3On and drawVw ? bandFillCol : na, "Fill +3σ")
+fill(pL2, pL3, f3On and drawVw ? bandFillCol : na, "Fill -3σ")
+
+rollVW(int n) =>
+    float sv = math.sum(nz(volume), n)
+    float spv = math.sum(hlc3 * nz(volume), n)
+    sv > 0 ? spv / sv : na
+[r7, r30, r90, r365] = request.security(syminfo.tickerid, "D", [rollVW(7)[1], rollVW(30)[1], rollVW(90)[1], rollVW(365)[1]], lookahead = barmerge.lookahead_on)
+plot(drawVw and eR7 ? r7 : na, "Rolling 7D VWAP", eRoll, 1)
+plot(drawVw and eR30 ? r30 : na, "Rolling 30D VWAP", eRoll, 1)
+plot(drawVw and eR90 ? r90 : na, "Rolling 90D VWAP", eRoll, 1)
+plot(drawVw and eR365 ? r365 : na, "Rolling 365D VWAP", eRoll, 1)
+
+// ── 2 · TPO. Олон хаагдсан профайл + баруун талын хөгжиж буй профайл. ──
+string tpoTF = switch eTpoPer
+    "Weekly" => "W"
+    "Monthly" => "M"
+    => "D"
+string tpoPrevTag = eTpoPer == "Weekly" ? "PW" : eTpoPer == "Monthly" ? "PM" : "PD"
+string tpoCurTag = eTpoPer == "Weekly" ? "CW" : eTpoPer == "Monthly" ? "CM" : "CD"
+bool tpoActive = eTpoOn and timeframe.in_seconds(timeframe.period) < timeframe.in_seconds(tpoTF)
+var float[] curH = array.new<float>()
+var float[] curL = array.new<float>()
+var float blkH = na
+var float blkL = na
+var int lastBlk = na
+var int curStart = 0
+var float prvPOC = na
+var float prvVAH = na
+var float prvVAL = na
+var int prvEnd = na
+var Naked nPOC = newNaked()
+int blkId = int(math.floor(time / (tpoMin * 60000.0)))
+bool tpoNew = timeframe.change(tpoTF)
+if tpoActive
+    if tpoNew
+        if not na(blkH)
+            curH.push(blkH)
+            curL.push(blkL)
+        if curH.size() > 0
+            [c_, lo_, st_, pI, hI, lI] = tpoCalc(curH, curL, eTpoRows, tpoVA)
+            prvPOC := lo_ + st_ * (pI + 0.5)
+            prvVAH := lo_ + st_ * (hI + 1)
+            prvVAL := lo_ + st_ * lI
+            prvEnd := bar_index - 1
+            saveHist(c_, lo_, st_, pI, hI, lI, curStart, bar_index - 1, prvPOC, prvVAH, prvVAL)
+            saveSingles(c_, lo_, st_)
+            nPOC.addN(prvPOC, prvEnd, nPocMax + 1)
+        curH.clear()
+        curL.clear()
+        curStart := bar_index
+        blkH := high
+        blkL := low
+        lastBlk := blkId
+    else
+        if na(lastBlk) or blkId != lastBlk
+            if not na(blkH)
+                curH.push(blkH)
+                curL.push(blkL)
+            blkH := high
+            blkL := low
+            lastBlk := blkId
+        else
+            blkH := math.max(blkH, high)
+            blkL := math.min(blkL, low)
+    nPOC.testN(high, low)
+
+bool canW = timeframe.in_seconds(timeframe.period) < timeframe.in_seconds("W")
+bool canM = timeframe.in_seconds(timeframe.period) < timeframe.in_seconds("M")
+bool needSide = htfTpo and eTpoPer == "Daily" and eTpoOn
+int sideRows = math.min(eTpoRows, 32)
+if needSide and canW
+    tW.step(newW, blkId, sideRows, tpoVA)
+if needSide and canM
+    tM.step(newM, blkId, sideRows, tpoVA)
+
+if spTop.size() > 0
+    for i = 0 to spTop.size() - 1
+        if spX1.get(i) == 0
+            float mxv = math.max(spMax.get(i), high)
+            float mnv = math.min(spMin.get(i), low)
+            spMax.set(i, mxv)
+            spMin.set(i, mnv)
+            if mxv >= spTop.get(i) and mnv <= spBot.get(i)
+                spX1.set(i, bar_index)
+
+// ── 3 · Гол түвшин. Хөндөгдөөгүй нээлт хүрвэл арилна. ──
+[dO, dPH, dPL, dPC] = request.security(syminfo.tickerid, "D", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+[wO, wPH, wPL, wPC] = request.security(syminfo.tickerid, "W", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+[mO, mPH, mPL, mPC] = request.security(syminfo.tickerid, "M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+[qO, qPH, qPL, qPC] = request.security(syminfo.tickerid, "3M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+[yO, yPH, yPL, yPC] = request.security(syminfo.tickerid, "12M", [open, high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
 var KL kD = KL.new()
 var KL kW = KL.new()
 var KL kM = KL.new()
@@ -508,26 +897,9 @@ kW.roll(newW, wO, nkW, klNakMax)
 kM.roll(newM, mO, nkM, klNakMax)
 kQ.roll(newQ, qO, nkQ, klNakMax)
 kY.roll(newY, yO, nkY, klNakMax)
-
-// Sessions (New York time)
-type Sess
-    float h = na
-    float l = na
-    int   start = 0
-
-method track(Sess s, bool inS, bool inPrev) =>
-    if inS and not inPrev
-        s.h := high
-        s.l := low
-        s.start := bar_index
-    else if inS
-        s.h := math.max(s.h, high)
-        s.l := math.min(s.l, low)
-    s
-
 bool inAsia = not na(time(timeframe.period, asiaSes, "America/New_York"))
-bool inLon  = not na(time(timeframe.period, lonSes, "America/New_York"))
-bool inNY   = not na(time(timeframe.period, nySes, "America/New_York"))
+bool inLon = not na(time(timeframe.period, lonSes, "America/New_York"))
+bool inNY = not na(time(timeframe.period, nySes, "America/New_York"))
 var Sess sA = Sess.new()
 var Sess sL = Sess.new()
 var Sess sN = Sess.new()
@@ -541,11 +913,47 @@ wasAsia := inAsia
 wasLon := inLon
 wasNY := inNY
 
-// ═════════════════════════════ 4 · VOLUME DELTA ═════════════════════════════
+// Профайлд хэрэглэх баарын цонх. Сүүлийн 500 баар.
+int dayKey = int(nz(time("D")))
+int weekKey = int(nz(time("W")))
+int monKey = int(nz(time("M")))
+int yearKey = int(nz(time("12M")))
+int sesId = inNY ? 3 : inLon ? 2 : inAsia ? 1 : 0
+if bX.size() > 0 and bX.get(bX.size() - 1) == bar_index
+    int li = bX.size() - 1
+    bH.set(li, high)
+    bL.set(li, low)
+    bV.set(li, nz(volume))
+    bSes.set(li, sesId)
+    bDay.set(li, dayKey)
+    bWeek.set(li, weekKey)
+    bMon.set(li, monKey)
+    bYear.set(li, yearKey)
+else
+    bH.push(high)
+    bL.push(low)
+    bV.push(nz(volume))
+    bX.push(bar_index)
+    bSes.push(sesId)
+    bDay.push(dayKey)
+    bWeek.push(weekKey)
+    bMon.push(monKey)
+    bYear.push(yearKey)
+    if bH.size() > 500
+        bH.shift()
+        bL.shift()
+        bV.shift()
+        bX.shift()
+        bSes.shift()
+        bDay.shift()
+        bWeek.shift()
+        bMon.shift()
+        bYear.shift()
+
+// ── 4 · Дельта. Relative / Z-score / SMA. Огцом үед лаа будна. ──
 bool ltfLower = timeframe.in_seconds(ltfIn) <= timeframe.in_seconds(timeframe.period)
 string ltfUse = ltfLower ? ltfIn : timeframe.period
 [lO, lC, lH, lL, lV] = request.security_lower_tf(syminfo.tickerid, ltfUse, [open, close, high, low, volume])
-
 float buyV = 0.0
 float sellV = 0.0
 float maxV = -1.0
@@ -553,53 +961,54 @@ float maxP = hlc3
 int nLtf = lV.size()
 bool useLtf = dMethod == "Intrabar (LTF)" and nLtf > 0
 var float prevLtfC = na
-if dOn
-    if useLtf
-        for i = 0 to nLtf - 1
-            float v = nz(lV.get(i))
-            float o = lO.get(i)
-            float c = lC.get(i)
-            if c > o
-                buyV += v
-            else if c < o
-                sellV += v
-            else if not na(prevLtfC) and c > prevLtfC
-                buyV += v
-            else if not na(prevLtfC) and c < prevLtfC
-                sellV += v
-            else
-                buyV += v * 0.5
-                sellV += v * 0.5
-            prevLtfC := c
-            if v > maxV
-                maxV := v
-                maxP := (lH.get(i) + lL.get(i) + c) / 3.0
-    else
-        float rng = high - low
-        float vv = nz(volume)
-        float frac = rng > 0 ? (close - open) / rng : 0.0
-        buyV := vv * (1.0 + frac) / 2.0
-        sellV := vv * (1.0 - frac) / 2.0
-        maxP := hlc3
-        prevLtfC := close
-
+if useLtf
+    for i = 0 to nLtf - 1
+        float v = nz(lV.get(i))
+        float o = lO.get(i)
+        float c = lC.get(i)
+        if c > o
+            buyV += v
+        else if c < o
+            sellV += v
+        else if not na(prevLtfC) and c > prevLtfC
+            buyV += v
+        else if not na(prevLtfC) and c < prevLtfC
+            sellV += v
+        else
+            buyV += v * 0.5
+            sellV += v * 0.5
+        prevLtfC := c
+        if v > maxV
+            maxV := v
+            maxP := (lH.get(i) + lL.get(i) + c) / 3.0
+else
+    float rng = high - low
+    float vv = nz(volume)
+    float frac = rng > 0 ? (close - open) / rng : 0.0
+    buyV := vv * (1.0 + frac) / 2.0
+    sellV := vv * (1.0 - frac) / 2.0
+    maxP := hlc3
+    prevLtfC := close
 float delta = buyV - sellV
-float dSd = ta.stdev(delta, zLen)
-float dz = dSd > 0 ? delta / dSd : 0.0
-float az = math.abs(dz)
-int tier = t3On and az >= t3 ? 3 : t2On and az >= t2 ? 2 : t1On and az >= t1 ? 1 : 0
+float absD = math.abs(delta)
+float relBase = ta.sma(absD, relLen)
+float zBase = ta.stdev(delta, zLen)
+float smaBase = ta.sma(absD, smaLen)
+float thrBase = dThr == "Z-score" ? zBase : dThr == "SMA" ? smaBase : relBase
+float mag = thrBase > 0 ? absD / thrBase : 0.0
+float k1 = t1 * eZ
+float k2 = t2 * eZ
+float k3 = t3 * eZ
+int tier = t3On and mag >= k3 ? 3 : t2On and mag >= k2 ? 2 : t1On and mag >= k1 ? 1 : 0
 bool isBuy = delta > 0
-
 var float cvd = 0.0
 if newD
     cvd := 0.0
 cvd += delta
-
 color tierCol = tier == 3 ? (isBuy ? t3u : t3d) : tier == 2 ? (isBuy ? t2u : t2d) : tier == 1 ? (isBuy ? t1u : t1d) : na
 barcolor(dOn and colorBars and tier > 0 ? tierCol : na, title = "Delta spike bar color")
-
 float bubP = bubLoc == "Max-volume price" ? maxP : (isBuy ? low : high)
-bool bubBase = dOn and bubOn and tier >= bubMin
+bool bubBase = dOn and bubOn and tier >= eBubMin
 bool tierPal = bubPal == "Tier colors"
 plotshape(bubBase and isBuy and tier == 1 ? bubP : na, "Buy bubble T1", shape.circle, location.absolute, tierPal ? t1u : color.new(bubBuy, 45), size = size.tiny)
 plotshape(bubBase and isBuy and tier == 2 ? bubP : na, "Buy bubble T2", shape.circle, location.absolute, tierPal ? t2u : color.new(bubBuy, 20), size = size.small)
@@ -607,8 +1016,28 @@ plotshape(bubBase and isBuy and tier == 3 ? bubP : na, "Buy bubble T3", shape.ci
 plotshape(bubBase and not isBuy and tier == 1 ? bubP : na, "Sell bubble T1", shape.circle, location.absolute, tierPal ? t1d : color.new(bubSell, 45), size = size.tiny)
 plotshape(bubBase and not isBuy and tier == 2 ? bubP : na, "Sell bubble T2", shape.circle, location.absolute, tierPal ? t2d : color.new(bubSell, 20), size = size.small)
 plotshape(bubBase and not isBuy and tier == 3 ? bubP : na, "Sell bubble T3", shape.circle, location.absolute, tierPal ? t3d : bubSell, size = size.normal)
+if bubBase
+    if bubX.size() > 0 and bubX.get(bubX.size() - 1) == bar_index
+        int bi = bubX.size() - 1
+        bubY.set(bi, bubP)
+        bubDlt.set(bi, delta)
+        bubS.set(bi, isBuy ? 1 : -1)
+    else
+        bubX.push(bar_index)
+        bubY.push(bubP)
+        bubDlt.push(delta)
+        bubS.push(isBuy ? 1 : -1)
+        if bubX.size() > 12
+            bubX.shift()
+            bubY.shift()
+            bubDlt.shift()
+            bubS.shift()
+else if bubX.size() > 0 and bubX.get(bubX.size() - 1) == bar_index
+    bubX.pop()
+    bubY.pop()
+    bubDlt.pop()
+    bubS.pop()
 
-// Open interest: only for crypto perpetuals; ignore_invalid_symbol keeps it safe elsewhere
 bool isPerp = syminfo.type == "crypto" and str.endswith(syminfo.ticker, ".P")
 string oiSym = isPerp ? syminfo.prefix + ":" + syminfo.ticker + "_OI" : syminfo.tickerid
 float oiRaw = request.security(oiSym, timeframe.period, close, ignore_invalid_symbol = true)
@@ -621,12 +1050,12 @@ bool oiDn = oiOn and isPerp and not na(oiZ) and oiZ <= -oiZThr
 plotshape(oiUp, "OI pump", shape.circle, location.abovebar, oiPump, size = size.tiny)
 plotshape(oiDn, "OI dump", shape.circle, location.abovebar, oiDump, size = size.tiny)
 
-// ═════════════════════════════ 5 · SIGNALS ═════════════════════════════
+// ── 5 · Дохио. Зөвхөн баталгаажсан баар. ──
 bool vwShort = sigOn and sigVW and barstate.isconfirmed and high >= bU2 and close < bU2 and (not sigDelta or delta < 0)
-bool vwLong  = sigOn and sigVW and barstate.isconfirmed and low <= bL2 and close > bL2 and (not sigDelta or delta > 0)
+bool vwLong = sigOn and sigVW and barstate.isconfirmed and low <= bL2 and close > bL2 and (not sigDelta or delta > 0)
 bool pocXUp = ta.crossover(close, prvPOC)
 bool pocXDn = ta.crossunder(close, prvPOC)
-bool pocLong  = sigOn and sigPOC and tpoActive and barstate.isconfirmed and pocXUp and (not sigDelta or delta > 0)
+bool pocLong = sigOn and sigPOC and tpoActive and barstate.isconfirmed and pocXUp and (not sigDelta or delta > 0)
 bool pocShort = sigOn and sigPOC and tpoActive and barstate.isconfirmed and pocXDn and (not sigDelta or delta < 0)
 plotshape(vwLong, "VWAP -2σ rejection long", shape.labelup, location.belowbar, color.new(#4CAF50, 0), text = "VW", textcolor = color.white, size = size.tiny)
 plotshape(vwShort, "VWAP +2σ rejection short", shape.labeldown, location.abovebar, color.new(#F23645, 0), text = "VW", textcolor = color.white, size = size.tiny)
@@ -637,68 +1066,53 @@ alertcondition(vwShort, "VWAP +2σ rejection (short)", "OS-AIO: VWAP +2σ reject
 alertcondition(pocLong, "TPO POC reclaim (long)", "OS-AIO: close reclaimed previous TPO POC on {{ticker}} at {{close}}")
 alertcondition(pocShort, "TPO POC lost (short)", "OS-AIO: close lost previous TPO POC on {{ticker}} at {{close}}")
 
-// ═════════════════════════════ DRAWING (last bar only) ═════════════════════════════
-var line[]  gLines  = array.new<line>()
-var label[] gLabels = array.new<label>()
-var box[]   gBoxes  = array.new<box>()
+// ── Зураг. Баруун ирмэгт богино шугам, monospace шошго. ──
+addLvl(Lvl[] a, float p, string txt, string pre, string kind, color c, string st, int w, bool dl, int g, int rank, string tip) =>
+    if not na(p)
+        a.push(Lvl.new(p, txt, pre, kind, c, bar_index + eExt, st, w, dl, g, rank, tip))
 
-vwTag(string p, string kind, bool prev) =>
-    // p = "D","W","M","Q","Y"; kind = "VWAP","VAH","VAL","+2","-2","+3","-3"
-    string base = ""
-    if vwNaming == "Orochi (wVAH)"
-        string k2 = kind == "VWAP" or kind == "VAH" or kind == "VAL" ? kind : kind + "σ"
-        base := (prev ? "p" : "") + str.lower(p) + k2
-    else
-        string k3 = kind == "VWAP" ? "VWAP" : kind == "VAH" ? "+1σ" : kind == "VAL" ? "-1σ" : kind + "σ"
-        base := (prev ? "p" : "") + p + " " + k3
-    (vwUnder ? "__________" : "") + base
+vwOne(string pre, string kind) =>
+    string body = vwNaming == "Orochi (wVAH)" ? str.lower(pre) + kind : pre + " " + kind
+    (vwUnder ? "____" : "") + body
 
-addVW(Lvl[] a, VW s, string p, color c, int rank) =>
-    int x2 = bar_index + vwLblOff
-    if lblCur
-        addLvl(a, s.vw, vwTag(p, "VWAP", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
-        addLvl(a, s.vw + s.sd * m1, vwTag(p, "VAH", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
-        addLvl(a, s.vw - s.sd * m1, vwTag(p, "VAL", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
-        if lblCur2
-            addLvl(a, s.vw + s.sd * m2, vwTag(p, "+2", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
-            addLvl(a, s.vw - s.sd * m2, vwTag(p, "-2", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
-            addLvl(a, s.vw + s.sd * m3, vwTag(p, "+3", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
-            addLvl(a, s.vw - s.sd * m3, vwTag(p, "-3", false), c, s.start, x2, line.style_solid, 1, false, 1, rank)
-    if lblPrev and not na(s.pvw)
-        addLvl(a, s.pvw, vwTag(p, "VWAP", true), c, s.start, x2, line.style_solid, 1, prevLines, 1, rank)
-        addLvl(a, s.pvw + s.psd * m1, vwTag(p, "VAH", true), c, s.start, x2, line.style_dotted, 1, prevLines, 1, rank)
-        addLvl(a, s.pvw - s.psd * m1, vwTag(p, "VAL", true), c, s.start, x2, line.style_dotted, 1, prevLines, 1, rank)
+addVW(Lvl[] a, VW s, string pre, string pPre, color c, int rank, bool showThis) =>
+    if showThis
+        bool curOn = autoAdapt ? true : lblCur
+        if curOn
+            addLvl(a, s.vw, vwOne(pre, "VWAP"), pre, "VWAP", c, line.style_solid, 1, false, 0, rank, "Одоогийн VWAP. Хэмжээстэй дундаж үнэ.")
+            addLvl(a, s.vw + s.sd * m1, vwOne(pre, "VAH"), pre, "VAH", c, line.style_solid, 1, false, 0, rank, "VAH. VWAP дээр нэмэх 1 стандарт хазайлт. Үнийн бүсийн дээд хязгаар.")
+            addLvl(a, s.vw - s.sd * m1, vwOne(pre, "VAL"), pre, "VAL", c, line.style_solid, 1, false, 0, rank, "VAL. VWAP хасах 1 стандарт хазайлт. Үнийн бүсийн доод хязгаар.")
+            if lblCur2
+                addLvl(a, s.vw + s.sd * m2, vwOne(pre, "+2σ"), pre, "+2σ", c, line.style_dotted, 1, false, 0, rank, "+2 стандарт хазайлт.")
+                addLvl(a, s.vw - s.sd * m2, vwOne(pre, "-2σ"), pre, "-2σ", c, line.style_dotted, 1, false, 0, rank, "-2 стандарт хазайлт.")
+                addLvl(a, s.vw + s.sd * m3, vwOne(pre, "+3σ"), pre, "+3σ", c, line.style_dotted, 1, false, 0, rank, "+3 стандарт хазайлт.")
+                addLvl(a, s.vw - s.sd * m3, vwOne(pre, "-3σ"), pre, "-3σ", c, line.style_dotted, 1, false, 0, rank, "-3 стандарт хазайлт.")
+        if lblPrev and not na(s.pvw)
+            addLvl(a, s.pvw, vwOne(pPre, "VWAP"), pPre, "VWAP", c, line.style_dotted, 1, prevLines, 0, rank, "Өмнөх үеийн VWAP.")
+            addLvl(a, s.pvw + s.psd * m1, vwOne(pPre, "VAH"), pPre, "VAH", c, line.style_dotted, 1, prevLines, 0, rank, "Өмнөх үеийн VAH.")
+            addLvl(a, s.pvw - s.psd * m1, vwOne(pPre, "VAL"), pPre, "VAL", c, line.style_dotted, 1, prevLines, 0, rank, "Өмнөх үеийн VAL.")
 
-addKL(Lvl[] a, KL k, float pH, float pL, float pC, string nm, string pnm, color c, bool oOn, bool hlOn, bool mdOn, bool cOn, bool curOn, int rank) =>
-    int x2 = bar_index + klOff
-    if oOn
-        addLvl(a, k.op, nm + " Open", c, k.start, x2, line.style_solid, 1, true, 0, rank)
-    if hlOn
-        addLvl(a, pH, "Prev " + pnm + " High", c, k.pstart, x2, line.style_solid, 1, true, 0, rank)
-        addLvl(a, pL, "Prev " + pnm + " Low", c, k.pstart, x2, line.style_solid, 1, true, 0, rank)
-    if mdOn and not na(pH) and not na(pL)
-        addLvl(a, (pH + pL) / 2.0, "Prev " + pnm + " Mid", c, k.pstart, x2, line.style_dotted, 1, true, 0, rank)
-    if cOn
-        addLvl(a, pC, "Prev " + pnm + " Close", c, k.pstart, x2, line.style_dashed, 1, true, 0, rank)
-    if curOn
-        addLvl(a, k.cH, nm + " High", c, k.start, x2, line.style_solid, 1, true, 0, rank)
-        addLvl(a, k.cL, nm + " Low", c, k.start, x2, line.style_solid, 1, true, 0, rank)
+addKL(Lvl[] a, float p, string tag, color c, string st, int rank, string tip) =>
+    addLvl(a, p, tag + " " + fmtPrice(p), tag, "", c, st, 1, true, 0, rank, tip)
 
-addNaked(Lvl[] a, Naked n, string nm, color c, bool on, int rank) =>
-    if on and n.p.size() > 0
-        for i = 0 to n.p.size() - 1
-            addLvl(a, n.p.get(i), "Naked " + nm, c, n.x.get(i), bar_index + klOff, line.style_solid, 1, true, 0, rank)
+emitLab(float p, string txt, string tip, color c, int x) =>
+    if not na(p) and str.length(txt) > 0 and gLabels.size() < 450
+        gLabels.push(label.new(x, p, txt, xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_left, textcolor = c, size = lblSz, textalign = text.align_left, tooltip = tip, text_font_family = font.family_monospace))
+    0
 
-addSess(Lvl[] a, Sess s, string nm, color c, bool on) =>
-    if on and not na(s.h)
-        addLvl(a, s.h, nm + " High", c, s.start, bar_index + klOff, line.style_dashed, 1, true, 0, 5)
-        addLvl(a, s.l, nm + " Low", c, s.start, bar_index + klOff, line.style_dashed, 1, true, 0, 5)
+showTxt(int n, bool same, bool key, string prefs, string kind, string keys, string txt, float price) =>
+    string s = txt
+    if n > 1 and same and kind != ""
+        s := prefs + " " + kind
+        if vwUnder
+            s := "____" + s
+    else if n > 1 and key and keys != ""
+        s := keys + " " + fmtPrice(price)
+    s
 
-// Draw labels of one group, merging nearby prices into "A / B" (colour of the highest-timeframe item)
-drawGroup(Lvl[] a, int g, float tol, string lstyle, string talign) =>
+drawGroup(Lvl[] a, int g, float tol) =>
     float[] ps = array.new<float>()
     int[] ix = array.new<int>()
-    label[] out = array.new<label>()
     if a.size() > 0
         for i = 0 to a.size() - 1
             if a.get(i).grp == g
@@ -707,190 +1121,487 @@ drawGroup(Lvl[] a, int g, float tol, string lstyle, string talign) =>
     if ps.size() > 0
         int[] ord = ps.sort_indices(order.ascending)
         float curP = na
-        string curT = ""
+        string curTxt = ""
+        string curPre = ""
+        string curKind = ""
+        string curKeys = ""
+        string curTip = ""
         color curC = na
         int curR = 99
         int curX = bar_index
+        int curN = 0
+        bool curSame = false
+        bool curKey = false
         for k = 0 to ord.size() - 1
             Lvl L = a.get(ix.get(ord.get(k)))
-            if not na(curP) and math.abs(L.price - curP) <= tol
-                curT := curT + " / " + L.txt
+            bool near = not na(curP) and math.abs(L.price - curP) <= tol
+            if near and curN > 0
+                curN += 1
+                curTxt := curTxt + " / " + L.txt
+                curTip := curTip + "\n" + L.tip
+                if L.kind == "" or L.kind != curKind
+                    curSame := false
+                else
+                    curPre := curPre + " / " + str.upper(L.pre)
+                if L.kind != "" or L.pre == ""
+                    curKey := false
+                else if curKey
+                    curKeys := curKeys + " / " + L.pre
                 if L.rank < curR
                     curR := L.rank
                     curC := L.col
             else
-                if not na(curP)
-                    out.push(label.new(curX, curP, curT, xloc.bar_index, yloc.price, color.new(color.black, 100), lstyle, curC, lblSz, talign))
+                if curN > 0
+                    emitLab(curP, showTxt(curN, curSame, curKey, curPre, curKind, curKeys, curTxt, curP), curTip, curC, curX)
                 curP := L.price
-                curT := L.txt
+                curTxt := L.txt
+                curKind := L.kind
+                curSame := L.kind != ""
+                curPre := str.upper(L.pre)
+                curKey := L.kind == "" and L.pre != ""
+                curKeys := curKey ? L.pre : ""
+                curTip := L.tip
                 curC := L.col
                 curR := L.rank
                 curX := L.x2
-        if not na(curP)
-            out.push(label.new(curX, curP, curT, xloc.bar_index, yloc.price, color.new(color.black, 100), lstyle, curC, lblSz, talign))
-    out
+                curN := 1
+        if curN > 0
+            emitLab(curP, showTxt(curN, curSame, curKey, curPre, curKind, curKeys, curTxt, curP), curTip, curC, curX)
+    0
+
+pushBox(int l, float t, int r, float b, color bg) =>
+    bool ok = gBoxes.size() < 470 and not na(t) and not na(b) and r > l
+    if ok
+        gBoxes.push(box.new(l, t, r, b, xloc = xloc.bar_index, border_color = color.new(color.black, 100), bgcolor = bg))
+    ok
+
+pushLn(int x1, float y1, int x2, float y2, color c, string st, int w) =>
+    if gLines.size() < 470 and not na(y1) and x2 > x1
+        gLines.push(line.new(x1, y1, x2, y2, xloc = xloc.bar_index, extend = extend.none, color = c, style = st, width = w))
+    0
+
+addVol(float[] bins, float lo, float step, int rows, float hiP, float loP, float volP) =>
+    if volP > 0 and step > 0 and not na(hiP) and not na(loP)
+        int b0 = int(math.floor((math.min(loP, hiP) - lo) / step))
+        int b1 = int(math.floor((math.max(loP, hiP) - lo) / step))
+        b0 := math.max(0, math.min(rows - 1, b0))
+        b1 := math.max(0, math.min(rows - 1, b1))
+        int span = math.max(1, b1 - b0 + 1)
+        float each = volP / span
+        for b = b0 to b1
+            bins.set(b, bins.get(b) + each)
+    0
+
+drawSeg(int i0, int i1, int rows, float vaPct, color inC, color outC, string tag, bool fromLeft, bool onAxis, Lvl[] lv) =>
+    if i1 >= i0 and i0 >= 0 and rows >= 8 and gBoxes.size() < 450
+        float lo = bL.get(i0)
+        float hi = bH.get(i0)
+        for i = i0 to i1
+            lo := math.min(lo, bL.get(i))
+            hi := math.max(hi, bH.get(i))
+        float step = math.max((hi - lo) / rows, syminfo.mintick)
+        float[] bins = array.new<float>(rows, 0.0)
+        for i = i0 to i1
+            bool live = bX.get(i) == bar_index and useLtf and lV.size() > 0
+            if live
+                int n = lV.size()
+                for j = 0 to n - 1
+                    addVol(bins, lo, step, rows, lH.get(j), lL.get(j), nz(lV.get(j)))
+            else
+                addVol(bins, lo, step, rows, bH.get(i), bL.get(i), bV.get(i))
+        float total = bins.sum()
+        if total > 0
+            float mx = bins.max()
+            int pocI = 0
+            float best = 1e10
+            for b = 0 to rows - 1
+                if bins.get(b) == mx
+                    float dist = math.abs(b - (rows - 1) / 2.0)
+                    if dist < best
+                        best := dist
+                        pocI := b
+            float acc = bins.get(pocI)
+            int up = pocI
+            int dn = pocI
+            while acc < total * vaPct and (up < rows - 1 or dn > 0)
+                float nu = up < rows - 1 ? bins.get(up + 1) : -1.0
+                float nd = dn > 0 ? bins.get(dn - 1) : -1.0
+                if nu >= nd and up < rows - 1
+                    up += 1
+                    acc += math.max(nu, 0.0)
+                else if dn > 0
+                    dn -= 1
+                    acc += math.max(nd, 0.0)
+                else
+                    break
+            float pocP = lo + step * (pocI + 0.5)
+            float vahP = lo + step * (up + 1)
+            float valP = lo + step * dn
+            int xL = clampX(bX.get(i0))
+            int xR = math.max(xL + 1, bX.get(i1))
+            int spanX = math.max(1, xR - xL)
+            int maxW = math.max(2, math.min(fromLeft ? int(math.round(spanX * 0.42)) : 14, 28))
+            pushBox(xL, vahP, xR, valP, color.new(inC, 92))
+            if mx > 0
+                for b = 0 to rows - 1
+                    if gBoxes.size() >= 470
+                        break
+                    float cv = bins.get(b)
+                    if cv > 0
+                        int w = math.max(1, int(math.round(cv / mx * maxW)))
+                        bool inside = b >= dn and b <= up
+                        int left = fromLeft ? xL : xR - w
+                        int right = fromLeft ? xL + w : xR
+                        pushBox(left, lo + step * (b + 1), math.max(left + 1, right), lo + step * b, color.new(inside ? inC : outC, inside ? 58 : 76))
+            pushLn(xL, pocP, xR, pocP, pocCol, line.style_solid, 2)
+            pushLn(xL, vahP, xR, vahP, vaLineCol, line.style_dotted, 1)
+            pushLn(xL, valP, xR, valP, vaLineCol, line.style_dotted, 1)
+            string tp = tag + " хэмжээний профайл. POC нь хамгийн их хэмжээтэй үнэ. TPO-оос тусдаа."
+            if onAxis
+                addLvl(lv, vahP, tag + " VAH " + fmtPrice(vahP), tag + "·VAH", "", inC, line.style_dotted, 1, false, 0, 2, "VAH · " + tp)
+                addLvl(lv, pocP, tag + " POC " + fmtPrice(pocP), tag + "·POC", "", pocCol, line.style_solid, 1, false, 0, 1, "POC · " + tp)
+                addLvl(lv, valP, tag + " VAL " + fmtPrice(valP), tag + "·VAL", "", inC, line.style_dotted, 1, false, 0, 2, "VAL · " + tp)
+            else if gLabels.size() < 440
+                int lx = xR
+                gLabels.push(label.new(lx, pocP, tag + " POC", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_right, textcolor = pocCol, size = size.tiny, textalign = text.align_right, tooltip = "POC · " + tp + " " + fmtPrice(pocP), text_font_family = font.family_monospace))
+    0
+
+collectSegs(int kind, int want) =>
+    int[] ss = array.new<int>()
+    int[] ee = array.new<int>()
+    int[] kk = array.new<int>()
+    int i = bH.size() - 1
+    int guard = 0
+    while i >= 0 and ss.size() < want and guard < 600
+        guard += 1
+        int key = kind == 1 ? bSes.get(i) : kind == 2 ? bDay.get(i) : kind == 3 ? bWeek.get(i) : kind == 4 ? bMon.get(i) : bYear.get(i)
+        if kind == 1 and key == 0
+            i -= 1
+        else
+            int j = i
+            int guard2 = 0
+            while j > 0 and guard2 < 600
+                guard2 += 1
+                int prevKey = kind == 1 ? bSes.get(j - 1) : kind == 2 ? bDay.get(j - 1) : kind == 3 ? bWeek.get(j - 1) : kind == 4 ? bMon.get(j - 1) : bYear.get(j - 1)
+                if prevKey != key
+                    break
+                j -= 1
+            ss.unshift(j)
+            ee.unshift(i)
+            kk.unshift(key)
+            i := j - 1
+    [ss, ee, kk]
+
+drawTpoHist() =>
+    if showPrevP and hN.size() > 0
+        int nP = hN.size()
+        int drawN = math.min(nP, eTpoHist)
+        int from = nP - drawN
+        for p = from to nP - 1
+            if gBoxes.size() >= 460
+                break
+            int rows = hN.get(p)
+            int off = 0
+            if p > 0
+                for j = 0 to p - 1
+                    off += hN.get(j)
+            if off + rows <= hBins.size() and rows > 0 and not na(hStep.get(p))
+                int x0 = clampX(hX0.get(p))
+                int x1e = math.max(x0 + 1, hX1.get(p))
+                float mx = 0.0
+                for b = 0 to rows - 1
+                    mx := math.max(mx, hBins.get(off + b))
+                pushBox(x0, hVah.get(p), x1e, hVal.get(p), vaBoxCol)
+                int maxW = math.max(1, int(math.round((x1e - x0) * prevWPct / 100.0)))
+                if mx > 0
+                    for b = 0 to rows - 1
+                        if gBoxes.size() >= 470
+                            break
+                        float cv = hBins.get(off + b)
+                        if cv > 0
+                            int w = math.max(1, int(math.round(cv / mx * maxW)))
+                            bool inside = b >= hValI.get(p) and b <= hVahI.get(p)
+                            color hc = inside ? histInCol : histOutCol
+                            pushBox(x0, hLo.get(p) + hStep.get(p) * (b + 1), x0 + w, hLo.get(p) + hStep.get(p) * b, hc)
+                pushLn(x0, hPoc.get(p), x1e, hPoc.get(p), color.new(pocCol, 25), line.style_solid, pocW)
+                if p < nP - 1 and gLabels.size() < 440
+                    gLabels.push(label.new(x1e, hPoc.get(p), "POC", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_right, textcolor = pocCol, size = size.tiny, textalign = text.align_right, tooltip = "Өмнөх TPO POC. Хамгийн их хугацаа зарцуулсан үнэ. " + fmtPrice(hPoc.get(p)), text_font_family = font.family_monospace))
+            if (excessOn or poorOn) and p == nP - 1 and rows > 0 and off + rows <= hBins.size()
+                int topI = -1
+                int botI = -1
+                for b = 0 to rows - 1
+                    if hBins.get(off + b) > 0
+                        if botI < 0
+                            botI := b
+                        topI := b
+                if topI >= 0 and botI >= 0 and gLabels.size() < 445
+                    float topPx = hLo.get(p) + hStep.get(p) * (topI + 0.5)
+                    float botPx = hLo.get(p) + hStep.get(p) * (botI + 0.5)
+                    bool exH = hBins.get(off + topI) <= 1.0
+                    bool exL = hBins.get(off + botI) <= 1.0
+                    if excessOn and exH
+                        gLabels.push(label.new(bar_index + eExt, topPx, "Excess H", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_left, textcolor = #9C27B0, size = size.tiny, tooltip = "Илүүдэл дээд. Орой дээр ганц TPO, хүчтэй түлхэлт.", text_font_family = font.family_monospace))
+                    if poorOn and not exH
+                        gLabels.push(label.new(bar_index + eExt, topPx, "Poor H", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_left, textcolor = ink, size = size.tiny, tooltip = "Сул дээд. Орой дээр олон TPO, дутуу аукцион.", text_font_family = font.family_monospace))
+                    if excessOn and exL
+                        gLabels.push(label.new(bar_index + eExt, botPx, "Excess L", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_left, textcolor = #9C27B0, size = size.tiny, tooltip = "Илүүдэл доод. Ёроолд ганц TPO.", text_font_family = font.family_monospace))
+                    if poorOn and not exL
+                        gLabels.push(label.new(bar_index + eExt, botPx, "Poor L", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_left, textcolor = ink, size = size.tiny, tooltip = "Сул доод. Ёроолд олон TPO, дутуу аукцион.", text_font_family = font.family_monospace))
+    0
+
+drawDev() =>
+    if showDevP and tpoActive and gBoxes.size() < 450
+        float[] hs = curH.copy()
+        float[] ls = curL.copy()
+        if not na(blkH)
+            hs.push(blkH)
+            ls.push(blkL)
+        if hs.size() > 0
+            [dc, dlo, dst, dpI, dhI, dlI] = tpoCalc(hs, ls, eTpoRows, tpoVA)
+            if not na(dst) and dc.size() > 0
+                float dmx = dc.max()
+                int xR = bar_index + eDevOff
+                float dPOC = dlo + dst * (dpI + 0.5)
+                float dVAH = dlo + dst * (dhI + 1)
+                float dVAL = dlo + dst * dlI
+                if dmx > 0
+                    for b = 0 to dc.size() - 1
+                        if gBoxes.size() >= 470
+                            break
+                        float cv = dc.get(b)
+                        if cv > 0
+                            int w = math.max(1, int(math.round(cv / dmx * devW)))
+                            color hc = b >= dlI and b <= dhI ? histInCol : histOutCol
+                            pushBox(xR - w, dlo + dst * (b + 1), xR, dlo + dst * b, hc)
+                pushLn(xR - devW, dPOC, xR, dPOC, pocCol, line.style_solid, 2)
+                pushLn(xR - devW, dVAH, xR, dVAH, vaLineCol, line.style_solid, 1)
+                pushLn(xR - devW, dVAL, xR, dVAL, vaLineCol, line.style_solid, 1)
+                if gLabels.size() < 440
+                    gLabels.push(label.new(xR, dVAH, tpoCurTag + " VAH (" + fmtPrice(dVAH) + ")", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_left, textcolor = vaLineCol, size = lblSz, tooltip = "Хөгжиж буй профайлын VAH. Үнийн бүсийн дээд хязгаар.", text_font_family = font.family_monospace))
+                    gLabels.push(label.new(xR, dPOC, tpoCurTag + " POC (" + fmtPrice(dPOC) + ")", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_left, textcolor = pocCol, size = lblSz, tooltip = "Хөгжиж буй профайлын POC. Хамгийн их хугацаа зарцуулсан үнэ.", text_font_family = font.family_monospace))
+                    gLabels.push(label.new(xR, dVAL, tpoCurTag + " VAL (" + fmtPrice(dVAL) + ")", xloc = xloc.bar_index, yloc = yloc.price, color = labBg, style = label.style_label_left, textcolor = vaLineCol, size = lblSz, tooltip = "Хөгжиж буй профайлын VAL. Үнийн бүсийн доод хязгаар.", text_font_family = font.family_monospace))
+    0
+
+drawPrevVa(VW s, color c) =>
+    if prevVaBox and not lblOnly and s.pEnd >= s.pStart and s.pEnd >= 0 and not na(s.pvw) and not na(s.psd)
+        pushBox(clampX(s.pStart), s.pvw + s.psd * m1, math.max(clampX(s.pStart) + 1, s.pEnd), s.pvw - s.psd * m1, color.new(c, 92))
+    0
 
 if barstate.islast
-    for l in gLines
-        l.delete()
+    if gLines.size() > 0
+        for ln in gLines
+            ln.delete()
     gLines.clear()
-    for lb in gLabels
-        lb.delete()
+    if gLabels.size() > 0
+        for lb in gLabels
+            lb.delete()
     gLabels.clear()
-    for bx in gBoxes
-        bx.delete()
+    if gBoxes.size() > 0
+        for bx in gBoxes
+            bx.delete()
     gBoxes.clear()
 
     Lvl[] lv = array.new<Lvl>()
     float tol = mergeOn ? nz(atr14) * mergePct / 100.0 : -1.0
+    bool labD = autoAdapt ? eShowD : lblDV
+    bool labW = autoAdapt ? eShowW : lblWV
+    bool labM = autoAdapt ? eShowM : lblMV
+    bool labQ = autoAdapt ? eShowQ : lblQV
+    bool labY = autoAdapt ? eShowY : lblYV
+    addVW(lv, vD, "D", "pD", eColD, 4, labD)
+    addVW(lv, vW, "W", "pW", eColW, 3, labW)
+    addVW(lv, vM, "M", "pM", eColM, 2, labM)
+    addVW(lv, vQ, "Q", "pQ", eColQ, 1, labQ)
+    addVW(lv, vY, "Y", "pY", eColY, 0, labY)
 
-    // VWAP labels (group 1)
-    if lblDV
-        addVW(lv, vD, "D", colDV, 4)
-    if lblWV
-        addVW(lv, vW, "W", colWV, 3)
-    if lblMV
-        addVW(lv, vM, "M", colMV, 2)
-    if lblQV
-        addVW(lv, vQ, "Q", colQV, 1)
-    if lblYV
-        addVW(lv, vY, "Y", colYV, 0)
-
-    // Key levels (group 0)
     if klOn
-        addKL(lv, kY, yPH, yPL, yPC, "Yearly", "Year", yCol, yOpenOn, yPrevHL, yPrevMd, yPrevC, yCurHL, 0)
-        addKL(lv, kQ, qPH, qPL, qPC, "Quarterly", "Quarter", qCol, qOpenOn, qPrevHL, qPrevMd, qPrevC, qCurHL, 1)
-        addKL(lv, kM, mPH, mPL, mPC, "Monthly", "Month", mCol, mOpenOn, mPrevHL, mPrevMd, mPrevC, mCurHL, 2)
-        addKL(lv, kW, wPH, wPL, wPC, "Weekly", "Week", wCol, wOpenOn, wPrevHL, wPrevMd, wPrevC, wCurHL, 3)
-        addKL(lv, kD, dPH, dPL, dPC, "Daily", "Day", dCol, dOpenOn, dPrevHL, dPrevMd, dPrevC, dCurHL, 4)
-        addNaked(lv, nkY, "Yearly", yCol, yNaked, 0)
-        addNaked(lv, nkQ, "Quarterly", qCol, qNaked, 1)
-        addNaked(lv, nkM, "Monthly", mCol, mNaked, 2)
-        addNaked(lv, nkW, "Weekly", wCol, wNaked, 3)
-        addNaked(lv, nkD, "Daily", dCol, dNaked, 4)
-        addSess(lv, sA, "Asia", asiaCol, asiaOn)
-        addSess(lv, sL, "London", lonCol, lonOn)
-        addSess(lv, sN, "NY", nyCol, nyOn)
+        if eYOpen
+            addKL(lv, kY.op, "YO", eYCol, line.style_solid, 0, "YO · Энэ жилийн нээлтийн үнэ.")
+        if eYHL
+            addKL(lv, yPH, "PYH", eYCol, line.style_solid, 0, "PYH · Өмнөх жилийн дээд цэг.")
+            addKL(lv, yPL, "PYL", eYCol, line.style_solid, 0, "PYL · Өмнөх жилийн доод цэг.")
+        if eYMid and not na(yPH) and not na(yPL)
+            addKL(lv, (yPH + yPL) / 2.0, "PYM", eYCol, line.style_dotted, 0, "PYM · Өмнөх жилийн дундаж. Тасархай шугам.")
+        if eYCls
+            addKL(lv, yPC, "PYC", eYCol, line.style_dotted, 0, "PYC · Өмнөх жилийн хаалт.")
+        if eYCur
+            addKL(lv, kY.cH, "YH", eYCol, line.style_solid, 0, "YH · Энэ жилийн дээд цэг.")
+            addKL(lv, kY.cL, "YL", eYCol, line.style_solid, 0, "YL · Энэ жилийн доод цэг.")
+        if eQOpen
+            addKL(lv, kQ.op, "QO", qCol, line.style_solid, 1, "QO · Энэ улирлын нээлт.")
+        if eQHL
+            addKL(lv, qPH, "PQH", qCol, line.style_solid, 1, "PQH · Өмнөх улирлын дээд цэг.")
+            addKL(lv, qPL, "PQL", qCol, line.style_solid, 1, "PQL · Өмнөх улирлын доод цэг.")
+        if eQMid and not na(qPH) and not na(qPL)
+            addKL(lv, (qPH + qPL) / 2.0, "PQM", qCol, line.style_dotted, 1, "PQM · Өмнөх улирлын дундаж.")
+        if eQCls
+            addKL(lv, qPC, "PQC", qCol, line.style_dashed, 1, "PQC · Өмнөх улирлын хаалт.")
+        if eQCur
+            addKL(lv, kQ.cH, "QH", qCol, line.style_solid, 1, "QH · Энэ улирлын дээд цэг.")
+            addKL(lv, kQ.cL, "QL", qCol, line.style_solid, 1, "QL · Энэ улирлын доод цэг.")
+        if eMOpen
+            addKL(lv, kM.op, "MO", mCol, line.style_solid, 2, "MO · Энэ сарын нээлт.")
+        if eMHL
+            addKL(lv, mPH, "PMH", mCol, line.style_solid, 2, "PMH · Өмнөх сарын дээд цэг.")
+            addKL(lv, mPL, "PML", mCol, line.style_solid, 2, "PML · Өмнөх сарын доод цэг.")
+        if eMMid and not na(mPH) and not na(mPL)
+            addKL(lv, (mPH + mPL) / 2.0, "PMM", mCol, line.style_dotted, 2, "PMM · Өмнөх сарын дундаж. Тасархай шугам.")
+        if eMCls
+            addKL(lv, mPC, "PMC", mCol, line.style_dashed, 2, "PMC · Өмнөх сарын хаалт.")
+        if eMCur
+            addKL(lv, kM.cH, "MH", mCol, line.style_solid, 2, "MH · Энэ сарын дээд цэг.")
+            addKL(lv, kM.cL, "ML", mCol, line.style_solid, 2, "ML · Энэ сарын доод цэг.")
+        if eWOpen
+            addKL(lv, kW.op, "WO", wCol, line.style_solid, 3, "WO · Энэ долоо хоногийн нээлт.")
+        if eWHL
+            addKL(lv, wPH, "PWH", wCol, line.style_solid, 3, "PWH · Өмнөх долоо хоногийн дээд цэг.")
+            addKL(lv, wPL, "PWL", wCol, line.style_solid, 3, "PWL · Өмнөх долоо хоногийн доод цэг.")
+        if eWMid and not na(wPH) and not na(wPL)
+            addKL(lv, (wPH + wPL) / 2.0, "PWM", wCol, line.style_dotted, 3, "PWM · Өмнөх долоо хоногийн дундаж. Тасархай шугам.")
+        if eWCls
+            addKL(lv, wPC, "PWC", wCol, line.style_dashed, 3, "PWC · Өмнөх долоо хоногийн хаалт.")
+        if eWCur
+            addKL(lv, kW.cH, "WH", wCol, line.style_solid, 3, "WH · Энэ долоо хоногийн дээд цэг.")
+            addKL(lv, kW.cL, "WL", wCol, line.style_solid, 3, "WL · Энэ долоо хоногийн доод цэг.")
+        if eDOpen
+            addKL(lv, kD.op, "DO", dCol, line.style_solid, 4, "DO · Өнөөдрийн нээлтийн үнэ.")
+        if eDHL
+            addKL(lv, dPH, "PDH", dCol, line.style_solid, 4, "PDH · Өмнөх өдрийн дээд цэг.")
+            addKL(lv, dPL, "PDL", dCol, line.style_solid, 4, "PDL · Өмнөх өдрийн доод цэг.")
+        if eDMid and not na(dPH) and not na(dPL)
+            addKL(lv, (dPH + dPL) / 2.0, "PDM", dCol, line.style_dotted, 4, "PDM · Өмнөх өдрийн дундаж. Тасархай шугам.")
+        if eDCls
+            addKL(lv, dPC, "PDC", dCol, line.style_dotted, 4, "PDC · Өмнөх өдрийн хаалт.")
+        if eDCur
+            addKL(lv, kD.cH, "DH", dCol, line.style_solid, 4, "DH · Өнөөдрийн дээд цэг.")
+            addKL(lv, kD.cL, "DL", dCol, line.style_solid, 4, "DL · Өнөөдрийн доод цэг.")
+        if eYNak and nkY.p.size() > 0
+            for i = 0 to nkY.p.size() - 1
+                addKL(lv, nkY.p.get(i), "nYO", eYCol, line.style_dotted, 0, "nYO · Хөндөгдөөгүй жилийн нээлт. Үнэ дахин хүрвэл арилна.")
+        if eQNak and nkQ.p.size() > 0
+            for i = 0 to nkQ.p.size() - 1
+                addKL(lv, nkQ.p.get(i), "nQO", qCol, line.style_dotted, 1, "nQO · Хөндөгдөөгүй улирлын нээлт.")
+        if eMNak and nkM.p.size() > 0
+            for i = 0 to nkM.p.size() - 1
+                addKL(lv, nkM.p.get(i), "nMO", mCol, line.style_dotted, 2, "nMO · Хөндөгдөөгүй сарын нээлт.")
+        if eWNak and nkW.p.size() > 0
+            for i = 0 to nkW.p.size() - 1
+                addKL(lv, nkW.p.get(i), "nWO", wCol, line.style_dotted, 3, "nWO · Хөндөгдөөгүй долоо хоногийн нээлт.")
+        if eDNak and nkD.p.size() > 0
+            for i = 0 to nkD.p.size() - 1
+                addKL(lv, nkD.p.get(i), "nDO", dCol, line.style_dotted, 4, "nDO · Хөндөгдөөгүй өдрийн нээлт. Үнэ хүрвэл арилна.")
+        if eAsia and not na(sA.h)
+            addKL(lv, sA.h, "AS H", asiaCol, line.style_dashed, 5, "AS H · Азийн сешний дээд цэг.")
+            addKL(lv, sA.l, "AS L", asiaCol, line.style_dashed, 5, "AS L · Азийн сешний доод цэг.")
+        if eLon and not na(sL.h)
+            addKL(lv, sL.h, "LN H", lonCol, line.style_dashed, 5, "LN H · Лондонгийн сешний дээд цэг.")
+            addKL(lv, sL.l, "LN L", lonCol, line.style_dashed, 5, "LN L · Лондонгийн сешний доод цэг.")
+        if eNy and not na(sN.h)
+            addKL(lv, sN.h, "NY H", nyCol, line.style_dashed, 5, "NY H · Нью-Йоркийн сешний дээд цэг.")
+            addKL(lv, sN.l, "NY L", nyCol, line.style_dashed, 5, "NY L · Нью-Йоркийн сешний доод цэг.")
 
-    // Rolling VWAP tags
-    int rx = bar_index + 3
-    if r7On and not na(r7)
-        gLabels.push(label.new(rx, r7, "7D", xloc.bar_index, yloc.price, color.new(color.black, 100), label.style_label_left, rCol, lblSz))
-    if r30On and not na(r30)
-        gLabels.push(label.new(rx, r30, "30D", xloc.bar_index, yloc.price, color.new(color.black, 100), label.style_label_left, rCol, lblSz))
-    if r90On and not na(r90)
-        gLabels.push(label.new(rx, r90, "90D", xloc.bar_index, yloc.price, color.new(color.black, 100), label.style_label_left, rCol, lblSz))
-    if r365On and not na(r365)
-        gLabels.push(label.new(rx, r365, "365D", xloc.bar_index, yloc.price, color.new(color.black, 100), label.style_label_left, rCol, lblSz))
+    if tpoActive and not na(prvPOC)
+        string pTip = "Өмнөх TPO. POC нь хамгийн их хугацаа зарцуулсан үнэ."
+        addLvl(lv, prvVAH, tpoPrevTag + " VAH (" + fmtPrice(prvVAH) + ")", tpoPrevTag, "VAH", vaLineCol, line.style_dotted, 1, extLines, 0, 1, tpoPrevTag + " VAH · Үнийн бүсийн дээд хязгаар. " + pTip)
+        addLvl(lv, prvPOC, tpoPrevTag + " POC (" + fmtPrice(prvPOC) + ")", tpoPrevTag, "POC", pocCol, line.style_solid, pocW, extLines, 0, 0, tpoPrevTag + " POC · " + pTip)
+        addLvl(lv, prvVAL, tpoPrevTag + " VAL (" + fmtPrice(prvVAL) + ")", tpoPrevTag, "VAL", vaLineCol, line.style_dotted, 1, extLines, 0, 1, tpoPrevTag + " VAL · Үнийн бүсийн доод хязгаар. " + pTip)
+    if tpoActive and nPocOn and nPOC.p.size() > 0
+        for i = 0 to nPOC.p.size() - 1
+            float np = nPOC.p.get(i)
+            if np != prvPOC
+                addLvl(lv, np, "nPOC (" + fmtPrice(np) + ")", "n", "POC", pocCol, line.style_dotted, 1, true, 0, 0, "nPOC · Хөндөгдөөгүй POC. Үнэ дахин хүрээгүй хяналтын цэг.")
+    if needSide and tW.ready
+        addLvl(lv, tW.vah, "PW VAH (" + fmtPrice(tW.vah) + ")", "PW", "VAH", vaLineCol, line.style_dotted, 1, true, 0, 3, "PW VAH · Өмнөх долоо хоногийн TPO үнийн бүсийн дээд.")
+        addLvl(lv, tW.poc, "PW POC (" + fmtPrice(tW.poc) + ")", "PW", "POC", pocCol, line.style_dotted, 1, true, 0, 3, "PW POC · Өмнөх долоо хоногийн TPO хяналтын цэг.")
+        addLvl(lv, tW.val, "PW VAL (" + fmtPrice(tW.val) + ")", "PW", "VAL", vaLineCol, line.style_dotted, 1, true, 0, 3, "PW VAL · Өмнөх долоо хоногийн TPO үнийн бүсийн доод.")
+    if needSide and tM.ready
+        addLvl(lv, tM.vah, "PM VAH (" + fmtPrice(tM.vah) + ")", "PM", "VAH", vaLineCol, line.style_dotted, 1, true, 0, 2, "PM VAH · Өмнөх сарын TPO үнийн бүсийн дээд.")
+        addLvl(lv, tM.poc, "PM POC (" + fmtPrice(tM.poc) + ")", "PM", "POC", pocCol, line.style_dotted, 1, true, 0, 2, "PM POC · Өмнөх сарын TPO хяналтын цэг.")
+        addLvl(lv, tM.val, "PM VAL (" + fmtPrice(tM.val) + ")", "PM", "VAL", vaLineCol, line.style_dotted, 1, true, 0, 2, "PM VAL · Өмнөх сарын TPO үнийн бүсийн доод.")
 
-    // ── TPO drawing (group 2) ──
+    if eR7 and not na(r7)
+        emitLab(r7, "7D " + fmtPrice(r7), "7 хоногийн гүйдэг VWAP. Хаагдсан өдрийн баараар тооцно.", eRoll, bar_index + 2)
+    if eR30 and not na(r30)
+        emitLab(r30, "30D " + fmtPrice(r30), "30 хоногийн гүйдэг VWAP.", eRoll, bar_index + 2)
+    if eR90 and not na(r90)
+        emitLab(r90, "90D " + fmtPrice(r90), "90 хоногийн гүйдэг VWAP.", eRoll, bar_index + 2)
+    if eR365 and not na(r365)
+        emitLab(r365, "365D " + fmtPrice(r365), "365 хоногийн гүйдэг VWAP.", eRoll, bar_index + 2)
+
+    drawPrevVa(vD, eColD)
+    drawPrevVa(vW, eColW)
+    drawPrevVa(vM, eColM)
+    drawPrevVa(vQ, eColQ)
+    drawPrevVa(vY, eColY)
     if tpoActive
-        // previous profile
-        if showPrevP and prvCnt.size() > 0 and not na(prvStart)
-            int x0 = clampX(prvStart)
-            int x1e = math.max(prvEnd, x0 + 1)
-            float mx = prvCnt.max()
-            int maxW = math.max(1, int(math.round((x1e - x0) * prevWPct / 100.0)))
-            gBoxes.push(box.new(x0, prvVAH, x1e, prvVAL, border_color = color.new(color.black, 100), bgcolor = vaBoxCol))
-            for b = 0 to prvCnt.size() - 1
-                float c = prvCnt.get(b)
-                if c > 0
-                    int w = math.max(1, int(math.round(c / mx * maxW)))
-                    color hc = b >= prvValI and b <= prvVahI ? histInCol : histOutCol
-                    gBoxes.push(box.new(x0, prvLo + prvStep * (b + 1), x0 + w, prvLo + prvStep * b, border_color = color.new(color.black, 100), bgcolor = hc))
-            // single prints (rows visited by exactly one TPO period), merged into zones
-            if singlesOn
-                int b = 1
-                while b < prvCnt.size() - 1
-                    if prvCnt.get(b) == 1.0
-                        int e = b
-                        while e + 1 < prvCnt.size() - 1 and prvCnt.get(e + 1) == 1.0
-                            e += 1
-                        float zt = prvLo + prvStep * (e + 1)
-                        float zb = prvLo + prvStep * b
-                        bool filled = not na(postH) and postH >= zt and postL <= zb
-                        int xr = singleExt and not filled ? bar_index : x1e
-                        gBoxes.push(box.new(x0, zt, xr, zb, border_color = color.new(color.black, 100), bgcolor = singleCol))
-                        b := e + 1
-                    else
-                        b += 1
-            // in-session POC / VA lines
-            gLines.push(line.new(x0, prvPOC, x1e, prvPOC, xloc.bar_index, extend.none, color.new(pocCol, 30), line.style_solid, pocW))
-            gLines.push(line.new(x0, prvVAH, x1e, prvVAH, xloc.bar_index, extend.none, vaLineCol, line.style_solid, 1))
-            gLines.push(line.new(x0, prvVAL, x1e, prvVAL, xloc.bar_index, extend.none, vaLineCol, line.style_solid, 1))
-        // previous levels extended right + labels
-        if not na(prvPOC)
-            int xl = bar_index + tpoLblOff
-            int xs = na(prvEnd) ? bar_index : prvEnd
-            addLvl(lv, prvVAH, tpoPrevTag + " VAH (" + fmtP(prvVAH) + ")", vaLineCol, xs, xl, line.style_dotted, 1, extLines, 2, 1)
-            addLvl(lv, prvPOC, tpoPrevTag + " POC (" + fmtP(prvPOC) + ")", pocCol, xs, xl, line.style_dotted, 1, extLines, 2, 0)
-            addLvl(lv, prvVAL, tpoPrevTag + " VAL (" + fmtP(prvVAL) + ")", vaLineCol, xs, xl, line.style_dotted, 1, extLines, 2, 1)
-        // naked older POCs (skip the most recent one: it is already the previous POC)
-        if nPocOn and nPOC.p.size() > 0
-            for i = 0 to nPOC.p.size() - 1
-                float np = nPOC.p.get(i)
-                if np != prvPOC
-                    addLvl(lv, np, "nPOC (" + fmtP(np) + ")", pocCol, nPOC.x.get(i), bar_index + tpoLblOff, line.style_dotted, 1, true, 2, 0)
-        // developing profile at the right edge
-        if showDevP
-            float[] hs = curH.copy()
-            float[] ls = curL.copy()
-            if not na(blkH)
-                hs.push(blkH)
-                ls.push(blkL)
-            if hs.size() > 0
-                [dc, dlo, dst, dpI, dhI, dlI] = tpoCalc(hs, ls, tpoRows, tpoVA)
-                float dmx = dc.max()
-                int xR = bar_index + devOff
-                for b = 0 to dc.size() - 1
-                    float c = dc.get(b)
-                    if c > 0
-                        int w = math.max(1, int(math.round(c / dmx * devW)))
-                        color hc = b >= dlI and b <= dhI ? histInCol : histOutCol
-                        gBoxes.push(box.new(xR - w, dlo + dst * (b + 1), xR, dlo + dst * b, border_color = color.new(color.black, 100), bgcolor = hc))
-                float dPOC = dlo + dst * (dpI + 0.5)
-                float dVAH = dlo + dst * (dhI + 1)
-                float dVAL = dlo + dst * dlI
-                gLines.push(line.new(xR - devW, dPOC, xR, dPOC, xloc.bar_index, extend.none, pocCol, line.style_solid, 2))
-                gLines.push(line.new(xR - devW, dVAH, xR, dVAH, xloc.bar_index, extend.none, vaLineCol, line.style_solid, 1))
-                gLines.push(line.new(xR - devW, dVAL, xR, dVAL, xloc.bar_index, extend.none, vaLineCol, line.style_solid, 1))
-                addLvl(lv, dVAH, tpoCurTag + " VAH (" + fmtP(dVAH) + ")", vaLineCol, xR, xR + 2, line.style_solid, 1, false, 3, 1)
-                addLvl(lv, dPOC, tpoCurTag + " POC (" + fmtP(dPOC) + ")", pocCol, xR, xR + 2, line.style_solid, 1, false, 3, 0)
-                addLvl(lv, dVAL, tpoCurTag + " VAL (" + fmtP(dVAL) + ")", vaLineCol, xR, xR + 2, line.style_solid, 1, false, 3, 1)
+        drawTpoHist()
+        drawDev()
+        if singlesOn and spTop.size() > 0
+            for i = 0 to spTop.size() - 1
+                if gBoxes.size() >= 470
+                    break
+                int xA0 = clampX(spX0.get(i))
+                int xA1 = spX1.get(i) == 0 ? bar_index : spX1.get(i)
+                int xR = singleExt or spX1.get(i) != 0 ? math.max(xA0 + 1, xA1) : xA0 + 1
+                pushBox(xA0, spTop.get(i), xR, spBot.get(i), color.new(singleCol, spX1.get(i) == 0 ? 62 : 80))
 
-    // lines for all collected levels
+    if eVpOn and bH.size() > 1
+        if vpSel == "Session+Day"
+            [ss, ee, kk] = collectSegs(1, eVpPast + 1)
+            if ss.size() > 0
+                for i = 0 to ss.size() - 1
+                    string nm = kk.get(i) == 1 ? "AS" : kk.get(i) == 2 ? "LN" : "NY"
+                    drawSeg(ss.get(i), ee.get(i), eVpRows, eVpVa, eVpIn, eVpOut, nm, true, false, lv)
+            [ds, de, dk] = collectSegs(2, 1)
+            if ds.size() > 0
+                drawSeg(ds.get(0), de.get(0), eVpRows, eVpVa, eVpIn, eVpOut, "D", false, true, lv)
+        else
+            int kind = vpSel == "Weekly" ? 3 : vpSel == "Monthly" ? 4 : vpSel == "Yearly" ? 5 : vpSel == "Session+Day" ? 1 : 2
+            string tag = kind == 3 ? "W" : kind == 4 ? "M" : kind == 5 ? "Y" : "D"
+            [ss2, ee2, kk2] = collectSegs(kind, eVpPast + 1)
+            if ss2.size() > 0
+                for i = 0 to ss2.size() - 1
+                    drawSeg(ss2.get(i), ee2.get(i), eVpRows, eVpVa, eVpIn, eVpOut, tag, true, i == ss2.size() - 1, lv)
+
     if lv.size() > 0
         for i = 0 to lv.size() - 1
             Lvl L = lv.get(i)
             if L.drawLine
-                gLines.push(line.new(clampX(L.x1), L.price, L.x2, L.price, xloc.bar_index, extend.none, L.col, L.lstyle, L.lwidth))
+                color lc = L.lstyle == line.style_solid ? color.new(L.col, light ? 0 : 8) : color.new(L.col, light ? 20 : 38)
+                pushLn(bar_index, L.price, bar_index + eExt, L.price, lc, L.lstyle, L.lwidth)
+    drawGroup(lv, 0, tol)
 
-    // labels per group (merged)
-    gLabels.concat(drawGroup(lv, 0, tol, label.style_label_down, text.align_center))
-    gLabels.concat(drawGroup(lv, 1, tol, label.style_label_left, text.align_left))
-    gLabels.concat(drawGroup(lv, 2, tol, label.style_label_left, text.align_left))
-    gLabels.concat(drawGroup(lv, 3, tol, label.style_label_left, text.align_left))
+    if bubX.size() > 0
+        int b0 = math.max(0, bubX.size() - 8)
+        for i = b0 to bubX.size() - 1
+            if gLabels.size() < 450
+                bool upB = bubS.get(i) > 0
+                string bt = (bubDlt.get(i) > 0 ? "+" : "") + fmtVol(bubDlt.get(i))
+                gLabels.push(label.new(bubX.get(i), bubY.get(i), bt, xloc = xloc.bar_index, yloc = yloc.price, color = color.new(color.black, 100), style = label.style_none, textcolor = upB ? bubBuy : bubSell, size = size.tiny, tooltip = "Дельта бөмбөлөг. Авсан хасах зассан тик хэмжээ.", text_font_family = font.family_monospace))
 
-// ═════════════════════════════ DELTA TABLE ═════════════════════════════
-tblPosition(string s) =>
+// ── Хүснэгт. Толгой хос хэлээр. ──
+tblPosOf(string s) =>
     switch s
         "Bottom Right" => position.bottom_right
-        "Top Left"     => position.top_left
-        "Bottom Left"  => position.bottom_left
+        "Top Left" => position.top_left
+        "Bottom Left" => position.bottom_left
         => position.top_right
-
-var table dTbl = table.new(tblPosition(tblPos), 2, 5, bgcolor = color.new(#1E1E1E, 10), border_color = color.new(#434651, 0), border_width = 1, frame_color = color.new(#434651, 0), frame_width = 1)
+var table dTbl = table.new(tblPosOf(tblPos), 2, 7, bgcolor = tabBg, border_color = tabBd, border_width = 1, frame_color = tabBd, frame_width = 1)
 if barstate.islast and tblOn and dOn
-    color txt = #D1D4DC
     color dc = delta >= 0 ? bubBuy : bubSell
     color cc = cvd >= 0 ? bubBuy : bubSell
-    table.cell(dTbl, 0, 0, "Δ source", text_color = txt, text_size = size.small, text_halign = text.align_left)
-    table.cell(dTbl, 1, 0, useLtf ? "LTF " + ltfUse : "Candle", text_color = txt, text_size = size.small)
-    table.cell(dTbl, 0, 1, "Bar Δ", text_color = txt, text_size = size.small, text_halign = text.align_left)
-    table.cell(dTbl, 1, 1, str.tostring(delta, format.volume) + "  z " + str.tostring(dz, "#.0"), text_color = dc, text_size = size.small)
-    table.cell(dTbl, 0, 2, "CVD (day)", text_color = txt, text_size = size.small, text_halign = text.align_left)
-    table.cell(dTbl, 1, 2, str.tostring(cvd, format.volume), text_color = cc, text_size = size.small)
-    table.cell(dTbl, 0, 3, "Buy / Sell", text_color = txt, text_size = size.small, text_halign = text.align_left)
-    table.cell(dTbl, 1, 3, str.tostring(buyV, format.volume) + " / " + str.tostring(sellV, format.volume), text_color = txt, text_size = size.small)
-    table.cell(dTbl, 0, 4, "Open interest", text_color = txt, text_size = size.small, text_halign = text.align_left)
-    table.cell(dTbl, 1, 4, isPerp and not na(oi) ? str.tostring(oi, format.volume) : "n/a", text_color = txt, text_size = size.small)
+    string tfNm = tfKey == "MN" ? "Сар" : tfKey == "D" ? "Өдөр" : tfKey == "4H" ? "4ц" : tfKey == "1H" ? "1ц" : "5м"
+    table.cell(dTbl, 0, 0, "Delta · Дельта", text_color = ink, text_size = size.small, text_halign = text.align_left, bgcolor = tabHd, text_font_family = font.family_monospace, tooltip = "Дельта ба тик хэмжээний хураангуй.")
+    table.cell(dTbl, 1, 0, dThr + " · " + tfNm, text_color = ink, text_size = size.small, bgcolor = tabHd, text_font_family = font.family_monospace, tooltip = "Босгоны горим ба идэвхтэй цагийн пресет.")
+    table.cell(dTbl, 0, 1, "Эх · Source", text_color = ink, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "XAUUSD-ийн volume нь тик хэмжээ, үнийн өөрчлөлтийн тоо.")
+    table.cell(dTbl, 1, 1, useLtf ? "Тик LTF " + ltfUse : "Тик · Candle", text_color = ink, text_size = size.small, text_font_family = font.family_monospace, tooltip = "Тик хэмжээ. Биржийн бодит гэрээний хэмжээ биш.")
+    table.cell(dTbl, 0, 2, "Баар Δ · Bar", text_color = ink, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Энэ баарын дельта болон босгоноос хэд дахин их болох.")
+    table.cell(dTbl, 1, 2, fmtVol(delta) + "  " + str.tostring(mag, "#.0") + "x", text_color = dc, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(dTbl, 0, 3, "CVD · Өдөр", text_color = ink, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Өнөөдрийн хуримтлагдсан дельта.")
+    table.cell(dTbl, 1, 3, fmtVol(cvd), text_color = cc, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(dTbl, 0, 4, "Ав / Зар", text_color = ink, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Авсан ба зассан тик хэмжээ.")
+    table.cell(dTbl, 1, 4, fmtVol(buyV) + " / " + fmtVol(sellV), text_color = ink, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(dTbl, 0, 5, "OI · Сонирхол", text_color = ink, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Нээлттэй сонирхол. XAUUSD дээр байхгүй. Дэлгэрэнгүй OS-Delta цонхонд.")
+    table.cell(dTbl, 1, 5, isPerp and not na(oi) ? fmtVol(oi) : "n/a", text_color = ink, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(dTbl, 0, 6, "Профайл · VP", text_color = ink, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Энэ цаг дээр зурж буй хэмжээний профайл.")
+    table.cell(dTbl, 1, 6, eVpOn ? vpSel : "Off", text_color = ink, text_size = size.small, text_font_family = font.family_monospace, tooltip = "5м = сешн + өдөр. 1ц = өдөр. 4ц = долоо хоног. Өдөр = сар. Сар = жил.")

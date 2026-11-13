@@ -1,0 +1,146 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+//  Orochi-Style Delta Pane  ·  Дельта багана · CVD лаа · Нээлттэй сонирхол
+//  Доод цонхны хамтрагч индикатор (overlay = false).
+//  Дельта 0 дунд цэгийг тойрсон багана, CVD нь лаа.
+//  XAUUSD-ийн volume нь тик хэмжээ (үнийн өөрчлөлтийн тоо).
+//  OI зөвхөн крипто перпетуал (.P) дээр. Шүүлт: сүүлийн дунджаас 5 дахин их.
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Orochi-Style Delta Pane (CVD · OI)", "OS-Delta", overlay = false, precision = 2, max_labels_count = 20)
+
+// ── 00 · Дельта ──
+G = "00 · Delta · Дельта"
+dOn = input.bool(true, "Enable · Идэвхжүүлэх", group = G, tooltip = "Дельта багана болон CVD лааг асаана. Унтраавал тооцоо үргэлжилнэ, зураг нуугдана.")
+dMethod = input.string("Intrabar (LTF)", "Buy/sell · Ав/Зар", options = ["Intrabar (LTF)", "Candle body"], group = G, tooltip = "Доод цагийн баар бүрийн хэмжээг өсөхөд авсан, буурахад зассан гэж тооцно. Доод өгөгдөл байхгүй бол лааны биеэр ойролцоолно.")
+ltfIn = input.timeframe("1", "LTF · Доод цаг", group = G, tooltip = "Авсан, зассан хэмжээг задлах доод цагийн хүрээ. Чартнаас доош байх ёстой.")
+dThr = input.string("Relative", "Threshold · Босго", options = ["Relative", "Z-score", "SMA"], group = G, tooltip = "Relative = сүүлийн 20 баарын дундажаас хэд дахин их. Z-score = 50 баарын стандарт хазайлт. SMA = 300 баарын дундаж.")
+relLen = input.int(20, "Relative length · Харьцангуй урт", minval = 5, maxval = 200, group = G, tooltip = "Relative горимд дельтагийн үнэмлэхүй утгын дундажийг хэдэн баараар авах вэ.")
+zLen = input.int(50, "Z length · Z урт", minval = 5, maxval = 500, group = G, tooltip = "Z-score горимын стандарт хазайлтын урт.")
+smaLen = input.int(300, "SMA length · SMA урт", minval = 20, maxval = 1000, group = G, tooltip = "SMA горимд дельтагийн үнэмлэхүй утгын дундаж урт.")
+t1 = input.float(1.5, "Tier 1 · 1-р шат", minval = 0.1, step = 0.1, group = G, tooltip = "1-р шат. Дельта босгоосоо ийм дахин их бол сул огцом хөдөлгөөн.")
+t2 = input.float(2.5, "Tier 2 · 2-р шат", minval = 0.1, step = 0.1, group = G, tooltip = "2-р шат. Дунд зэргийн огцом дельта.")
+t3 = input.float(3.5, "Tier 3 · 3-р шат", minval = 0.1, step = 0.1, group = G, tooltip = "3-р шат. Хамгийн хүчтэй огцом дельта. Лаа болон баганын өнгө үүгээр өтгөрнө.")
+showD = input.bool(true, "Delta columns · Дельта багана", group = G, tooltip = "Дельтаг тэг дунд цэгийг тойрсон баганаар зурна.")
+showC = input.bool(true, "CVD candles · CVD лаа", group = G, tooltip = "Өдөр бүр тэгээс эхэлж хуримтлагдсан дельтаг лаагаар зурна.")
+upC = input.color(#3DDC97, "Up · Өсөлт", group = G, tooltip = "Эерэг дельта, авсан тал давамгайлсан үеийн өнгө.")
+dnC = input.color(#FF5C7A, "Down · Уналт", group = G, tooltip = "Сөрөг дельта, зассан тал давамгайлсан үеийн өнгө.")
+
+// ── 01 · Нээлттэй сонирхол (зөвхөн крипто) ──
+Go = "01 · Open interest · Нээлттэй сонирхол"
+oiOn = input.bool(true, "OI crypto · Крипто OI", group = Go, tooltip = "Зөвхөн тикер .P-ээр төгссөн крипто перпетуал дээр ажиллана. XAUUSD дээр нээлттэй сонирхлын өгөгдөл байхгүй.")
+oiMult = input.float(5.0, "Change filter · Өөрчлөлтийн шүүлт", minval = 1.0, step = 0.5, group = Go, tooltip = "OI-ийн өөрчлөлт сүүлийн үнэмлэхүй дунджаас ийм дахин их байж байж тодотгоно. Анхдагч 5 дахин.")
+oiLen = input.int(20, "OI length · OI урт", minval = 5, maxval = 200, group = Go, tooltip = "OI өөрчлөлтийн дундаж болон OI RSI-д ашиглах баарын тоо. Анхдагч 20.")
+oiUpC = input.color(#388E3C, "OI up · OI өсөлт", group = Go, tooltip = "Нээлттэй сонирхол огцом өссөн үеийн тэмдгийн өнгө.")
+oiDnC = input.color(#F7525F, "OI down · OI бууралт", group = Go, tooltip = "Нээлттэй сонирхол огцом буурсан үеийн тэмдгийн өнгө.")
+
+// Хэмжээг K/M болгож товчлох.
+fmtVol(float v) =>
+    float a = math.abs(nz(v))
+    string sgn = v < 0 ? "-" : ""
+    string b = a >= 1000000 ? str.tostring(a / 1000000.0, "#.#") + "M" : a >= 1000 ? str.tostring(a / 1000.0, "#.#") + "K" : str.tostring(a, format.volume)
+    sgn + b
+
+// ── Дельта тооцоо. Тик хэмжээг авсан, зассан гэж хуваана. ──
+bool newD = timeframe.change("D")
+bool ltfLower = timeframe.in_seconds(ltfIn) <= timeframe.in_seconds(timeframe.period)
+string ltfUse = ltfLower ? ltfIn : timeframe.period
+[lO, lC, lV] = request.security_lower_tf(syminfo.tickerid, ltfUse, [open, close, volume])
+
+float buyV = 0.0
+float sellV = 0.0
+int nLtf = lV.size()
+bool useLtf = dMethod == "Intrabar (LTF)" and nLtf > 0
+var float prevLtfC = na
+if useLtf
+    for i = 0 to nLtf - 1
+        float v = nz(lV.get(i))
+        float o = lO.get(i)
+        float c = lC.get(i)
+        if c > o
+            buyV += v
+        else if c < o
+            sellV += v
+        else if not na(prevLtfC) and c > prevLtfC
+            buyV += v
+        else if not na(prevLtfC) and c < prevLtfC
+            sellV += v
+        else
+            buyV += v * 0.5
+            sellV += v * 0.5
+        prevLtfC := c
+else
+    float rng = high - low
+    float vv = nz(volume)
+    float frac = rng > 0 ? (close - open) / rng : 0.0
+    buyV := vv * (1.0 + frac) / 2.0
+    sellV := vv * (1.0 - frac) / 2.0
+    prevLtfC := close
+
+float delta = buyV - sellV
+float absD = math.abs(delta)
+float relBase = ta.sma(absD, relLen)
+float zBase = ta.stdev(delta, zLen)
+float smaBase = ta.sma(absD, smaLen)
+float base = dThr == "Z-score" ? zBase : dThr == "SMA" ? smaBase : relBase
+float mag = base > 0 ? absD / base : 0.0
+int tier = mag >= t3 ? 3 : mag >= t2 ? 2 : mag >= t1 ? 1 : 0
+
+// CVD өдөр бүр шинээр эхэлнэ.
+var float cvd = 0.0
+if newD
+    cvd := 0.0
+cvd += delta
+float cOpen = nz(cvd[1], cvd)
+float cHi = math.max(cOpen, cvd)
+float cLo = math.min(cOpen, cvd)
+
+// ── OI. Крипто перпетуалаас бусад дээр хоосон. ──
+bool isPerp = syminfo.type == "crypto" and str.endswith(syminfo.ticker, ".P")
+string oiSym = isPerp ? syminfo.prefix + ":" + syminfo.ticker + "_OI" : syminfo.tickerid
+float oiRaw = request.security(oiSym, timeframe.period, close, ignore_invalid_symbol = true)
+float oi = isPerp ? oiRaw : na
+float oiChg = oi - oi[1]
+float oiMean = ta.sma(math.abs(oiChg), oiLen)
+float oiRsi = ta.rsi(oi, oiLen)
+bool oiBig = oiOn and isPerp and not na(oiChg) and oiMean > 0 and math.abs(oiChg) >= oiMult * oiMean
+bool oiUp = oiBig and oiChg > 0
+bool oiDn = oiBig and oiChg < 0
+
+// Тайлбар: OI өсөж дельта эерэг = шинэ лонг, гэх мэт.
+string read = not isPerp ? "n/a · XAUUSD дээр OI байхгүй" : oiUp and delta > 0 ? "New longs · Шинэ лонг" : oiUp and delta < 0 ? "New shorts · Шинэ шорт" : oiDn and delta > 0 ? "Shorts closing · Шорт хаагдаж байна" : oiDn and delta < 0 ? "Longs closing · Лонг хаагдаж байна" : "Шүүлтэд хүрээгүй"
+
+color baseC = delta >= 0 ? upC : dnC
+color colD = tier == 0 ? color.new(baseC, 50) : tier == 1 ? color.new(baseC, 25) : tier == 2 ? color.new(baseC, 8) : baseC
+color cvdC = cvd >= cOpen ? upC : dnC
+
+hline(0, "Mid · Дунд", color = #8A93A6, linestyle = hline.style_dotted)
+plot(dOn and showD ? delta : na, "Delta · Дельта", colD, 1, plot.style_columns)
+plotcandle(dOn and showC ? cOpen : na, dOn and showC ? cHi : na, dOn and showC ? cLo : na, dOn and showC ? cvd : na, "CVD · Хуримтлагдсан дельта", cvdC, cvdC, bordercolor = cvdC)
+plot(isPerp ? oi : na, "Open interest · Нээлттэй сонирхол", #90A4AE, display = display.data_window)
+plot(isPerp ? oiRsi : na, "OI RSI", #B0BEC5, display = display.data_window)
+plotshape(oiUp and delta > 0, "New longs · Шинэ лонг", shape.triangleup, location.top, oiUpC, size = size.tiny)
+plotshape(oiUp and delta < 0, "New shorts · Шинэ шорт", shape.triangledown, location.top, oiDnC, size = size.tiny)
+plotshape(oiDn and delta > 0, "Shorts closing · Шорт хаагдаж байна", shape.circle, location.bottom, oiUpC, size = size.tiny)
+plotshape(oiDn and delta < 0, "Longs closing · Лонг хаагдаж байна", shape.circle, location.bottom, oiDnC, size = size.tiny)
+
+// ── Хүснэгт. Толгой хос хэлээр. ──
+var table t = table.new(position.top_right, 2, 7, bgcolor = color.new(#12141A, 12), border_color = color.new(#3A4254, 30), border_width = 1, frame_color = color.new(#3A4254, 30), frame_width = 1)
+if barstate.islast and dOn
+    color hd = #1C2230
+    color tx = #E6E8EE
+    color dc = delta >= 0 ? upC : dnC
+    color cc = cvd >= 0 ? upC : dnC
+    table.cell(t, 0, 0, "Delta · Дельта", text_color = tx, text_size = size.small, text_halign = text.align_left, bgcolor = hd, text_font_family = font.family_monospace, tooltip = "Дельта = авсан хэмжээ хасах зассан хэмжээ. XAUUSD дээр энэ нь тик хэмжээ.")
+    table.cell(t, 1, 0, dThr, text_color = tx, text_size = size.small, bgcolor = hd, text_font_family = font.family_monospace, tooltip = "Идэвхтэй босгоны горим.")
+    table.cell(t, 0, 1, "Баар Δ · Bar", text_color = tx, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Энэ баарын дельта болон босгоноос хэд дахин их болохыг харуулна.")
+    table.cell(t, 1, 1, fmtVol(delta) + "  " + str.tostring(mag, "#.0") + "x", text_color = dc, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(t, 0, 2, "CVD · Хуримтлал", text_color = tx, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Өнөөдрийн хуримтлагдсан дельта. Өдөр солигдоход тэглэнэ.")
+    table.cell(t, 1, 2, fmtVol(cvd), text_color = cc, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(t, 0, 3, "Ав / Зар", text_color = tx, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Энэ баарт авсан болон зассан тик хэмжээ.")
+    table.cell(t, 1, 3, fmtVol(buyV) + " / " + fmtVol(sellV), text_color = tx, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(t, 0, 4, "OI RSI " + str.tostring(oiLen), text_color = tx, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "Нээлттэй сонирхлын RSI. Зөвхөн крипто перпетуал дээр тооцогдоно.")
+    table.cell(t, 1, 4, isPerp and not na(oiRsi) ? str.tostring(oiRsi, "#.0") : "n/a", text_color = tx, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(t, 0, 5, "OI Δ · Шүүлт", text_color = tx, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "OI-ийн өөрчлөлт. Шүүлт нь сүүлийн дунджаас олон дахин их эсэх.")
+    table.cell(t, 1, 5, isPerp and not na(oiChg) ? fmtVol(oiChg) + (oiBig ? "  FILTER" : "") : "n/a", text_color = oiUp ? oiUpC : oiDn ? oiDnC : tx, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(t, 0, 6, "Тайлбар · Read", text_color = tx, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "OI өсөж дельта эерэг = шинэ лонг. OI өсөж дельта сөрөг = шинэ шорт. OI буурч дельта эерэг = шорт хаагдаж байна. OI буурч дельта сөрөг = лонг хаагдаж байна.")
+    table.cell(t, 1, 6, read, text_color = tx, text_size = size.small, text_halign = text.align_left, text_font_family = font.family_monospace, tooltip = "OI өсөлт + дельта нэмэх нь шинэ урт позиц. OI бууралт + дельта хасах нь урт позиц хаагдаж байна.")
