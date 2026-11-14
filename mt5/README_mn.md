@@ -1,3 +1,11 @@
+# MT5 файлууд
+
+**Quantum AI XAU** индикатор (захиалга өгдөггүй, зөвхөн зурна): `indicators/QuantumAI_XAU.mq5`, `indicators/QuantumAI_Oscillator.mq5`, `indicators/QuantumAI_Math.mqh`.
+
+Суулгах: **File → Open Data Folder** → `MQL5/Indicators/` руу гурван файлыг хуулна → MetaEditor дээр тус бүрийг **F7**. XAUUSD чарт дээр overlay-г, доор нь Resonance цонхыг нэмнэ. Дэлгэрэнгүй, томъёо, 7 алхам англиар үндсэн `README.md` дотор.
+
+---
+
 # VP_Dow_EA — XAUUSD-д зориулсан MT5 Expert Advisor (хувилбар 1.00)
 
 > ⚠️ **Анхааруулга:** Энэ бот ашиг өгнө гэсэн баталгаа байхгүй. Өмнөх үр дүн ирээдүйн үр дүнг баталдаггүй. Эхлээд **Strategy Tester** дээр, дараа нь **демо данс** дээр туршаад, бодит мөнгөөр ажиллуулах эсэхээ өөрөө шийдээрэй.
