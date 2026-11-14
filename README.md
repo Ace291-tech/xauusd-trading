@@ -6,6 +6,7 @@
 - **TradingView Pine Script v6 all-in-one** (`tradingview/Orochi_Style_AllInOne.pine`) болон доод цонхны дельта (`tradingview/Orochi_Style_Delta_Pane.pine`). Тайлбар доор, англи + монгол.
 - **MT5 Expert Advisor** (`mt5/VP_Dow_EA.mq5`): volume profile болон Доугийн трэнд ашиглан оролт хийнэ. Суулгалт, компайл, Strategy Tester болон тохиргооны тайлбар `mt5/README_mn.md` файлд байна.
 - **Algo-breeder стратеги** (`tradingview/strategies/`, `mt5/experts/`): XAU Bred #1, #2, #3. Товч тайлбар `tradingview/strategies/README.md`, судалгааны тайлан `research/algo-breeder/REPORT.md`.
+- **Quantum AI XAU (өөрийн хувилбар, MT5)**: `mt5/indicators/QuantumAI_XAU.mq5` болон резонансын цонх `mt5/indicators/QuantumAI_Oscillator.mq5`. Суулгалт, томъёо, 7 алхам доор англиар. Энэ нь Cloud Chamber бүтээгдэхүүн биш.
 
 ## Хавтасны бүтэц
 
@@ -20,10 +21,132 @@
 ├── mt5/
 │   ├── VP_Dow_EA.mq5             # Expert Advisor
 │   ├── experts/                  # XAU Bred #1–#3 (MQL5)
+│   ├── indicators/
+│   │   ├── QuantumAI_XAU.mq5         # chart overlay
+│   │   ├── QuantumAI_Oscillator.mq5  # resonance subwindow
+│   │   └── QuantumAI_Math.mqh        # shared formulas
 │   └── README_mn.md              # EA-ийн монгол тайлбар
 └── research/
     └── algo-breeder/REPORT.md    # breeder-ийн судалгааны тайлан
 ```
+
+## Quantum AI XAU (original MT5 build)
+
+This is an original indicator pair. It follows the public module list, panel names, and the 30-page dual-module guide from [cloudchamber.zhtde.com](https://cloudchamber.zhtde.com/features). It is not the vendor's invite-only script, and it does not place orders.
+
+| File | Role |
+|---|---|
+| `mt5/indicators/QuantumAI_XAU.mq5` | Chart overlay: labels, SMC, profile, risk lines, both panels, thermometer |
+| `mt5/indicators/QuantumAI_Oscillator.mq5` | Subwindow: cyan/violet structural cloud and green/dark-red momentum bars |
+| `mt5/indicators/QuantumAI_Math.mqh` | Shared closed-bar formulas |
+
+### Install on MT5 (Mac, Wine, or Windows)
+
+1. In MetaTrader 5 choose **File → Open Data Folder**.
+2. Copy the three files into `MQL5/Indicators/`. Keep them in the same folder so the `.mqh` include resolves.
+3. Open MetaEditor (**F4**), open `QuantumAI_XAU.mq5`, press **F7**. Repeat for `QuantumAI_Oscillator.mq5`. Both should report **0 errors**.
+4. On an **XAUUSD** chart: Navigator → Indicators → **Quantum AI XAU**. Then add **QAI Resonance** in a subwindow under the price. MT5 draws subwindows below the chart; the vendor's TradingView layout puts that pane on top.
+5. Alerts: right-click the chart → **Expert list / Alerts**, or rely on the indicator's `Alert`, mobile push, and optional email. For Telegram, set **Webhook URL** to `https://api.telegram.org/bot<token>/sendMessage`, set **Chat id**, and add that URL under **Tools → Options → Expert Advisors → Allow WebRequest**. Some builds only allow `WebRequest` from Expert Advisors; push and `Alert` still work from the indicator.
+6. Demo first. This is not financial advice.
+
+### What the panels mean
+
+**Resonance Engine** (top right). Independent signals are the volume-profile location (percent of profile volume at or below price) and RSI(14). **Core Resonance** is their average. **Market Bias** is `Resonance Bull` or `Resonance Bear` only when both factors sit on the same side of 45/55. Otherwise it says `Waiting`. A confirmed Buy/Sell is allowed only when this bias matches the trigger.
+
+**Scalp / Swing / Range panel.** The mode renames the header. Ultra-short is **Scalp Mode**.
+
+- **AI Stance** is the Wyckoff phase plus the local direction: `Bear Distribution - Sell Rallies`, `Bull Accumulation - Buy Dips`, `Strong Bullish - Look For Longs`, `Strong Bearish - Look For Shorts`, `Coiling - Wait For Break`, `Neutral Bias - Cash is King`.
+- **Multi-TF Radar** reads the last **closed** bar of M15, M30, H1, H4, and D1 (the rows are inputs). Trend bias is an EMA(21)/EMA(55) stack. A tight coil near the slow EMA is `Tight Consolidation` and counts as no sign, so it breaks a unanimous **HTF Resonance**. Momentum strength is `|RSI-50| * 2`, bucketed at 32 and 22.
+- **Core Analytics**: HTF resonance (all five signs agree), Kaufman efficiency / ADX regime, Bollinger-vs-Keltner volatility (`Compression`, `Stable`, `Explosion (Breakout)`, `Expansion`), and 50-bar candle volume split (`Bulls in Control (n%)` and the stronger `Dominant` wording).
+- **Signal Tracker**: latest label, live confidence, Wilder ADX, engine `Ready` or `Cooling`, and how many of the 8 filter tiers pass.
+- **7-step checklist** (from the dual-module guide) and the size line: 7 passes = full, 5–6 = half, 4 = light 30%, fewer or a hard fail on steps 1, 3, 4, or 6 = stand aside. Steps 1–4 are the gates. Step 5 warns (does not pass) when H4 and D1 oppose a 3-row run. Step 6 fails a long above 80% and a short below 20%.
+- **Position Status** is a virtual plan only. **Active Stop** is the trailing stop.
+
+**Price thermometer.** Where the live price sits inside the high-low of the last 50 **closed** bars. Below 40% is `Bearish Markdown`, 40–60% is `Equilibrium Zone`, above 60% is `Bullish Markup`. The gradient runs blue to magenta.
+
+**Oscillator.** LazyBear WaveTrend. The slow wave is the white center of a violet/cyan cloud. The histogram is `wt1 - wt2`, lime/green above zero and red/maroon below.
+
+### Labels
+
+| Label | Meaning |
+|---|---|
+| Trend Bull / Trend Bear | Early warning. Internal CHoCH. Not a permission to trade. |
+| Buy / Sell | Confirmed. WaveTrend cross or a **valid** break, dual-factor resonance, WaveTrend not past ±60, causal score ≥ 60, cooldown elapsed. |
+| Liquidity Sweep | Wick through the prior swing or internal high/low, close back inside. |
+| Sweep + resonance alert | That sweep while volume-location and RSI agree with the reversal. |
+| False Break | Sweep, or a close through a level while resonance does **not** agree. Not used as a Buy/Sell trigger. |
+| Valid Break | Close through a level and resonance agrees. Can invalidate the opposite plan. |
+| Internal / Swing OB | Last extreme candle between the broken pivot and the break. Swing length follows the mode (20 / 50 / 30) unless you override it. |
+| BOS / CHoCH, FVG, Premium / Discount / Equilibrium | Standard SMC. Premium is the upper half of the latest swing range. |
+| Accumulation, Markup, Distribution, Markdown | Phase label. The same phase feeds AI Stance. |
+| Invalid | The previous Entry/TP/SL plan was replaced by an opposite signal, an opposite CHoCH, a resonant sweep, or a valid break the other way. Old TP lines are not kept. |
+| Entry, SL, TP1–TP3, Trailing SL | One active plan. TP distances measured off the vendor screenshots are **0.75R, 1.5R, 2.25R**. After a closed bar trades through TP1, the trail moves to entry, then ratchets by ATR. The stop is tested against the trail from **before** the bar. |
+
+Modes: Scalp (internal 5, swing 20, cooldown 4, kernel bandwidth 24), Swing (swing 50, cooldown 8, bandwidth 48), Range (buy only from the lower 30% of the profile, sell from the upper 70%). A structure input set above 0 replaces that mode value.
+
+### Symbol presets
+
+The chart symbol is matched by substring, so broker suffixes still hit (`XAUUSDm`, `XAGUSD.m`, `BTCUSD.pro`, `US100`, `USTEC`, `NAS100`). MOT Capital names are covered by `US100` and `USTEC`. Anything else keeps the generic row. **Manual** (`InpUseManual`) ignores detection and uses the generic numbers, unless you type a non-zero risk field or a session hour pair.
+
+Session hours are **broker server time**. On a typical EET/EEST server (UTC+2 in winter, UTC+3 in summer) they line up with London through New York, and with the NY cash open, without a daylight-saving table. Set both session hours to override. Set them equal, or use Manual with the hours left at -1, for no session filter. Outside the session the engine says `Session closed` and no new Buy/Sell is created. Structure, sweeps, and the thermometer keep drawing.
+
+A risk or profile input left at **0** keeps the preset. A number you type replaces that one field only.
+
+| | Gold `XAU` / `GOLD` | Silver `XAG` / `SILVER` | Bitcoin `BTC` | Nasdaq `NAS` / `US100` / `USTEC` / `NDX` | Generic / Manual |
+|---|---|---|---|---|---|
+| Why | The published screenshots are gold. Stops match the 0.75R / 1.5R / 2.25R ladder. | Wider wicks than gold, smaller dollar price, so the stop and the profile are finer. | Large spikes, trends that run, no session. | Cash-open spikes, then a regular session. | Unknown symbol, or Manual. |
+| SL | 1.50 × ATR | 1.85 × ATR | 2.00 × ATR | 1.70 × ATR | 1.50 × ATR |
+| Min / max stop | 0.60–2.50 ATR | 0.85–3.00 ATR | 1.00–3.50 ATR | 0.75–2.80 ATR | 0.60–2.50 ATR |
+| TP1 / TP2 / TP3 | 0.75R / 1.50R / 2.25R | 0.70R / 1.40R / 2.20R | 1.00R / 2.00R / 3.50R | 0.75R / 1.50R / 2.25R | 0.75R / 1.50R / 2.25R |
+| Trail after TP1 | 1.20 × ATR | 1.40 × ATR | 1.80 × ATR | 1.30 × ATR | 1.20 × ATR |
+| Extra cooldown | +0 bars | +2 | +2 | +1 | +0 |
+| Profile rows | 28 | 32 | 36 | 24 | 28 |
+| Dead volatility | ATR percentile under 20 fails tier 1 | under 25 | under 15 | under 22 | under 20 |
+| Expansion ratio | bandwidth > 1.08 × the bar 3 back | 1.12 | 1.05 | 1.10 | 1.08 |
+| Session | 10:00–23:00 server, London through NY | same | none (24h) | 16:00–23:00 server, NY cash on an EET server | none |
+
+The Nasdaq window starts at hour 16, so 16:00 inclusive through 22:59. That is about 14:30–21:00 UTC in winter and 13:30–20:00 UTC in summer on an EET server, which is the NY cash session. Gold and silver use 10:00–23:00, about 08:00–21:00 UTC in winter and 07:00–20:00 UTC in summer: London open through the NY afternoon.
+
+### Eight filter tiers
+
+Shown as `n/8`. They score the live direction. They do not delete a label that already passed the confirmation rule.
+
+1. Volatility level: ATR percentile over 100 bars is at least the symbol's dead-volatility line (20 on gold, 25 on silver, 15 on bitcoin, 22 on the Nasdaq).
+2. Volume intensity: last closed bar vs 0.8 × its 20-bar average.
+3. Momentum limit: WaveTrend not beyond ±60 against the direction.
+4. Momentum compression: histogram not shrinking while a squeeze is on.
+5. Major cycle: at least 3 radar rows share the direction.
+6. Signal cooling: cooldown bars since the last Buy/Sell.
+7. Structural inflection: a confirmed label is still inside the fresh-label window.
+8. Volatility pattern: Explosion or Expansion in scalp/swing; Compression or Stable in range mode.
+
+### Alerts (21)
+
+Buy, Sell, Trend Bull, Trend Bear, BOS both ways, CHoCH both ways, bullish and bearish OB break, bullish and bearish OB retest, channel breakout both ways, resistance break, support break, volatility explosion, TP1 break-even, liquidity sweep, sweep plus structural resonance, false breakout. History is replayed silently. A popup fires only when a new closed bar produces the event after the indicator is already on the chart.
+
+### Best-estimate formulas and sources
+
+No vendor formula was published, and no leaked or decompiled source was used. Each number is an estimate that uses a public technique and is tuned to the screenshots and the guide.
+
+| Module | Estimate | Source |
+|---|---|---|
+| Regression curve | Nadaraya–Watson rational quadratic, endpoint form, so a closed bar does not change. Fast curve uses one-third of the bandwidth. | jdehorty, [Nadaraya-Watson: Rational Quadratic Kernel (Non-Repainting)](https://www.tradingview.com/script/AWNvbPRM-Nadaraya-Watson-Rational-Quadratic-Kernel-Non-Repainting/). Formula `K = (1 + d² / (2 α h²))^(-α)`. Reimplemented, not copied. |
+| Channel | Rolling linear regression of closes, ±1 residual standard deviation. Fit ends on the previous closed bar so a break is a new close outside that fit. The channel is a live fit; signal labels are not. | Ordinary least squares. |
+| Oscillator | `esa = EMA(hlc3, n1)`, `d = EMA(\|hlc3-esa\|, n1)`, `ci = (hlc3-esa) / (0.015 d)`, `wt1 = EMA(ci, n2)`, `wt2 = SMA(wt1, 4)`. | LazyBear, [WaveTrend Oscillator](https://www.tradingview.com/script/2KE8wTuF-Indicator-WaveTrend-Oscillator-WT/). Math reimplemented. |
+| Squeeze state | Bollinger 20, 2.0 inside Keltner 20, 1.5 ATR = Compression. Leaving that state = Explosion. Bandwidth expanding = Expansion. Otherwise Stable. | John Carter, *Mastering the Trade*, ch. 11, and LazyBear's public Squeeze Momentum description. BB multiplier is 2.0. |
+| ADX / RSI | Wilder. | Welles Wilder, *New Concepts in Technical Trading Systems*. |
+| Regime | Kaufman efficiency ratio over 20 closes, with ADX. | Perry Kaufman efficiency ratio. |
+| Volume split | Tick volume × `(close-low)/(high-low)`. XAUUSD volume on both platforms is tick volume. | Standard candle approximation. Same idea as this repo's `VP_Dow_EA.mq5`. |
+| Volume profile | Uniform tick volume across each bar's high-low, POC = heaviest bin, value area grown from the POC to 70%. The panel score is the percent of that volume at or below price. | Market Profile / volume profile. Implementation follows this repo's EA, not a third-party script. |
+| SMC | Internal pivot length 5. A pivot is confirmed only after `length` bars to its right. BOS continues the internal trend; the first break the other way is CHoCH. The order block is the most extreme candle between that pivot and the candle before the break. A wick through the far side mitigates it. FVG is a three-candle gap larger than 0.15 ATR. | Public ICT / SMC rules. LuxAlgo's Smart Money Concepts is CC BY-NC-SA 4.0, so none of that source is included. The pivot length and "extreme candle between the pivot and the break" are the behavior described in public write-ups of that script, reimplemented independently. |
+| Liquidity sweep | High trades beyond the stored swing or internal high and the close finishes back below it, or the mirror image at a low. | SMC liquidity sweep. The Facebook notes on the vendor page describe the combined sweep + resonance alert. |
+| False vs valid break | Close through the level with resonance in the break's direction = valid. Close through without that resonance, or a wick that closes back inside = false. | Same notes: false breaks are the liquidity ones; valid breaks agree with structure. |
+| Confidence | Starts at 20. Adds up to 20 for live resonance, 12 for volume alignment, 12 for ADX, 12 for thermometer location, 14 for radar agreement, 10 for volatility quality. The **label** uses a causal score with no higher-timeframe term, so old Buy/Sell marks do not move when today's radar changes. The **panel** number includes the radar and can differ. | The guide's 0–100 score and the 60-point line. Weights are this build's estimate. |
+| Risk | Stop is the swing extreme when that distance is between 0.6 and 2.5 ATR, otherwise `1.5 × ATR`. | The site's dual stop (volatility plus structure). The R multiples are measured from the published screenshots. |
+| Checklist and size | Seven questions and the full / half / 30% / stand-aside table. | *Cloud Cabin · Quantum AI Dual-Module Trading System*, 30 pages, supplied with this task. |
+| Three engines, eight tiers, four phases, 3 modes | Names and pass/fail rules above. | Vendor site (home, toolkits, features, risk, FAQ), the 17-page product PDF, and the Facebook notes in the task. |
+
+Higher-timeframe reads use `CopyRates` from shift 1, so the forming higher-timeframe bar is not included. Chart signals use only bars that have already closed.
 
 ## XAU Bred стратеги (#1, #2, #3)
 
