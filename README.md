@@ -6,7 +6,8 @@
 - **TradingView Pine Script v6 all-in-one** (`tradingview/Orochi_Style_AllInOne.pine`) болон доод цонхны дельта (`tradingview/Orochi_Style_Delta_Pane.pine`). Тайлбар доор, англи + монгол.
 - **MT5 Expert Advisor** (`mt5/VP_Dow_EA.mq5`): volume profile болон Доугийн трэнд ашиглан оролт хийнэ. Суулгалт, компайл, Strategy Tester болон тохиргооны тайлбар `mt5/README_mn.md` файлд байна.
 - **Algo-breeder стратеги** (`tradingview/strategies/`, `mt5/experts/`): XAU Bred #1, #2, #3. Товч тайлбар `tradingview/strategies/README.md`, судалгааны тайлан `research/algo-breeder/REPORT.md`.
-- **Quantum AI XAU (өөрийн хувилбар, MT5)**: `mt5/indicators/QuantumAI_XAU.mq5` болон резонансын цонх `mt5/indicators/QuantumAI_Oscillator.mq5`. Суулгалт, томъёо, 7 алхам доор англиар. Энэ нь Cloud Chamber бүтээгдэхүүн биш.
+- **Quantum AI (TradingView, Pine v6, нэг скрипт)**: `tradingview/QuantumAI_XAU.pine`. Суулгалт, үе, пресет: `tradingview/QuantumAI_README.md` (монгол + англи). Cloud Chamber бүтээгдэхүүн биш.
+- **Quantum AI XAU (өөрийн хувилбар, MT5)**: `mt5/indicators/`. Тайлбар доор. Cloud Chamber бүтээгдэхүүн биш.
 
 ## Хавтасны бүтэц
 
@@ -17,6 +18,8 @@
 │   ├── XAU_Footprint_Pro.pine         # Pine v5 индикатор
 │   ├── Orochi_Style_AllInOne.pine     # Pine v6 all-in-one
 │   ├── Orochi_Style_Delta_Pane.pine   # Pine v6 дельта цонх
+│   ├── QuantumAI_XAU.pine             # Pine v6 Quantum AI (chart + oscillator)
+│   ├── QuantumAI_README.md            # Quantum AI суулгалт, монгол + англи
 │   └── strategies/                    # XAU Bred #1–#3 (Pine v5)
 ├── mt5/
 │   ├── VP_Dow_EA.mq5             # Expert Advisor
@@ -29,6 +32,10 @@
 └── research/
     └── algo-breeder/REPORT.md    # breeder-ийн судалгааны тайлан
 ```
+
+## Quantum AI on TradingView
+
+The chart script is **`tradingview/QuantumAI_XAU.pine`**. Paste it in the Pine Editor, **Save**, **Add to chart**. The oscillator opens under the price; labels, zones, the profile, and the tables are drawn on the chart. Install steps, the four candle phases, symbol presets, and the non-repaint rules are in **`tradingview/QuantumAI_README.md`** (Mongolian and English).
 
 ## Quantum AI XAU (original MT5 build)
 
