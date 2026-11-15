@@ -1,0 +1,1108 @@
+//@version=6
+// Quantum AI — one Pine v6 script.
+// Pane: Resonance Distributor (WaveTrend cloud + momentum bars).
+// Chart: drawings use force_overlay. Signals and labels are created on confirmed bars and are not moved.
+// Original estimates from public techniques. Not the commercial Cloud Chamber product. Not financial advice.
+indicator("Quantum AI", "QAI", overlay = false, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 500)
+
+gM = "01 Mode"
+mode = input.string("Scalp", "System mode", options = ["Scalp", "Swing", "Range"], group = gM)
+manual = input.bool(false, "Manual preset (ignore symbol)", group = gM)
+minScore = input.float(60.0, "Minimum confidence", minval = 0, maxval = 100, group = gM)
+mtfNeed = input.int(3, "MTF rows that must agree", minval = 1, maxval = 5, group = gM)
+strictMtf = input.bool(true, "Require multi-timeframe confirmation", group = gM)
+
+gO = "02 Overrides (0 = preset / mode)"
+inInt = input.int(0, "Internal pivot", minval = 0, group = gO)
+inSw = input.int(0, "Swing pivot", minval = 0, group = gO)
+inCool = input.int(0, "Cooldown bars", minval = 0, group = gO)
+inAtrM = input.float(0.0, "ATR stop multiple", minval = 0, group = gO)
+inTp1 = input.float(0.0, "TP1 (R)", minval = 0, group = gO)
+inTp2 = input.float(0.0, "TP2 (R)", minval = 0, group = gO)
+inTp3 = input.float(0.0, "TP3 (R)", minval = 0, group = gO)
+inTrail = input.float(0.0, "Trail ATR after TP1", minval = 0, group = gO)
+inMinA = input.float(0.0, "Min stop (ATR)", minval = 0, group = gO)
+inMaxA = input.float(0.0, "Max stop (ATR)", minval = 0, group = gO)
+inBins = input.int(0, "Profile rows", minval = 0, maxval = 48, group = gO)
+inDead = input.int(0, "Dead-volatility percentile", minval = 0, maxval = 80, group = gO)
+inVol = input.float(0.0, "Min volume vs average", minval = 0, group = gO)
+useCustomSess = input.bool(false, "Use custom session", group = gO)
+customSess = input.session("1000-2300", "Custom session", group = gO)
+customTz = input.string("UTC", "Custom session timezone", group = gO)
+
+gV = "03 Modules"
+showKernel = input.bool(true, "Kernel curves", group = gV)
+showOsc = input.bool(true, "Oscillator in this pane", group = gV)
+showSig = input.bool(true, "Buy / Sell", group = gV)
+showEarly = input.bool(true, "Trend Bull / Bear", group = gV)
+showStruct = input.bool(true, "BOS / CHoCH", group = gV)
+showOb = input.bool(true, "Order blocks", group = gV)
+showFvg = input.bool(true, "Fair value gaps", group = gV)
+showZones = input.bool(true, "Premium / discount", group = gV)
+showVp = input.bool(true, "Volume profile + cost zones", group = gV)
+showRisk = input.bool(true, "Entry / SL / TP", group = gV)
+showPhaseBg = input.bool(true, "Phase background", group = gV)
+showPhaseLb = input.bool(true, "Phase labels", group = gV)
+showDash = input.bool(true, "Dashboard", group = gV)
+bodyMin = input.float(0.60, "Expansion body/range", minval = 0.3, maxval = 0.95, step = 0.05, group = gV)
+expAtr = input.float(1.20, "Expansion range vs ATR", minval = 0.5, step = 0.1, group = gV)
+
+gT = "04 Radar timeframes"
+tf1 = input.timeframe("15", "TF1", group = gT)
+tf2 = input.timeframe("30", "TF2", group = gT)
+tf3 = input.timeframe("60", "TF3", group = gT)
+tf4 = input.timeframe("240", "TF4", group = gT)
+tf5 = input.timeframe("D", "TF5", group = gT)
+
+// --- symbol presets (simple values) ---
+string tkr = str.upper(syminfo.ticker)
+bool isXau = str.contains(tkr, "XAU") or str.contains(tkr, "GOLD")
+bool isXag = str.contains(tkr, "XAG") or str.contains(tkr, "SILVER")
+bool isBtc = str.contains(tkr, "BTC")
+bool isNas = str.contains(tkr, "NAS") or str.contains(tkr, "US100") or str.contains(tkr, "USTEC") or str.contains(tkr, "NDX")
+string symName = manual ? "Manual" : isXau ? "XAU" : isXag ? "XAG" : isBtc ? "BTC" : isNas ? "NAS" : "Generic"
+
+float pAtr = isXag ? 1.85 : isBtc ? 2.00 : isNas ? 1.70 : 1.50
+float pTp1 = isXag ? 0.70 : isBtc ? 1.00 : 0.75
+float pTp2 = isXag ? 1.40 : isBtc ? 2.00 : 1.50
+float pTp3 = isXag ? 2.20 : isBtc ? 3.50 : 2.25
+float pTrail = isXag ? 1.40 : isBtc ? 1.80 : isNas ? 1.30 : 1.20
+float pMinA = isXag ? 0.85 : isBtc ? 1.00 : isNas ? 0.75 : 0.60
+float pMaxA = isXag ? 3.00 : isBtc ? 3.50 : isNas ? 2.80 : 2.50
+int pBins = isXag ? 32 : isBtc ? 36 : isNas ? 24 : 28
+int pDead = isXag ? 25 : isBtc ? 15 : isNas ? 22 : 20
+float pVol = isXag ? 0.90 : isBtc ? 0.70 : isNas ? 0.85 : 0.80
+int pCoolAdd = isXag or isBtc ? 2 : isNas ? 1 : 0
+
+int iLen = inInt > 0 ? inInt : 5
+int sLen = inSw > 0 ? inSw : mode == "Swing" ? 50 : mode == "Range" ? 30 : 20
+int baseCool = mode == "Swing" ? 8 : mode == "Range" ? 5 : 4
+int cool = inCool > 0 ? inCool : baseCool + (manual ? 0 : pCoolAdd)
+int kH = mode == "Swing" ? 48 : mode == "Range" ? 32 : 24
+int fastH = mode == "Swing" ? 16 : mode == "Range" ? 10 : 8
+int chanLen = mode == "Swing" ? 80 : mode == "Range" ? 50 : 48
+float atrM = inAtrM > 0 ? inAtrM : manual ? 1.50 : pAtr
+float tp1R = inTp1 > 0 ? inTp1 : manual ? 0.75 : pTp1
+float tp2R = inTp2 > 0 ? inTp2 : manual ? 1.50 : pTp2
+float tp3R = inTp3 > 0 ? inTp3 : manual ? 2.25 : pTp3
+float trailM = inTrail > 0 ? inTrail : manual ? 1.20 : pTrail
+float minA = inMinA > 0 ? inMinA : manual ? 0.60 : pMinA
+float maxA = inMaxA > 0 ? inMaxA : manual ? 2.50 : pMaxA
+int binN = inBins > 0 ? inBins : manual ? 28 : pBins
+int deadPct = inDead > 0 ? inDead : manual ? 20 : pDead
+float volMin = inVol > 0 ? inVol : manual ? 0.80 : pVol
+int vpLook = 140
+bool wantSess = useCustomSess or (not manual and (isXau or isXag or isNas))
+
+// --- causal series ---
+float atr = ta.atr(14)
+float rsi = ta.rsi(close, 14)
+[diPlus, diMinus, adx] = ta.dmi(14, 14)
+float ap = hlc3
+float esa = ta.ema(ap, 10)
+float dev = ta.ema(math.abs(ap - esa), 10)
+float ci = dev > 0 ? (ap - esa) / (0.015 * dev) : 0.0
+float wt1 = ta.ema(ci, 21)
+float wt2 = ta.sma(wt1, 4)
+float esaS = ta.ema(ap, 21)
+float devS = ta.ema(math.abs(ap - esaS), 21)
+float ciS = devS > 0 ? (ap - esaS) / (0.015 * devS) : 0.0
+float slow = ta.ema(ciS, 34)
+float bbU = ta.sma(close, 20) + 2.0 * ta.stdev(close, 20)
+float bbD = ta.sma(close, 20) - 2.0 * ta.stdev(close, 20)
+float kcM = ta.sma(close, 20)
+float kcU = kcM + 1.5 * atr
+float kcD = kcM - 1.5 * atr
+bool sq = bbU < kcU and bbD > kcD
+bool sqRecent = sq[1] or sq[2] or sq[3] or sq[4] or sq[5]
+float bw = bbU - bbD
+int volState = sq ? 0 : (sqRecent and bw > bw[3]) ? 2 : bw > bw[3] * 1.08 ? 3 : 1
+
+kernel(float src, int h, float alpha) =>
+    float cw = 0.0
+    float sw = 0.0
+    float den = h * h * 2.0 * alpha
+    if den <= 0
+        den := 1.0
+    for i = 0 to h
+        float w = math.pow(1.0 + i * i / den, -alpha)
+        cw += nz(src[i]) * w
+        sw += w
+    sw > 0 ? cw / sw : src
+
+float kern = kernel(close, kH, 8.0)
+float kernF = kernel(close, fastH, 8.0)
+
+mtfPack() =>
+    float c = close[1]
+    float e1 = ta.ema(close, 21)[1]
+    float e2 = ta.ema(close, 55)[1]
+    float r = ta.rsi(close, 14)[1]
+    float a = ta.atr(14)[1]
+    [c, e1, e2, r, a]
+
+[c1, e11, e21, r1, a1] = request.security(syminfo.tickerid, tf1, mtfPack(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[c2, e12, e22, r2, a2] = request.security(syminfo.tickerid, tf2, mtfPack(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[c3, e13, e23, r3, a3] = request.security(syminfo.tickerid, tf3, mtfPack(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[c4, e14, e24, r4, a4] = request.security(syminfo.tickerid, tf4, mtfPack(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+[c5, e15, e25, r5, a5] = request.security(syminfo.tickerid, tf5, mtfPack(), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_off)
+
+tfSign(float c, float e1, float e2, float r, float a) =>
+    float strength = math.abs(r - 50.0) * 2.0
+    bool up = c > e1 and e1 > e2
+    bool dn = c < e1 and e1 < e2
+    bool tight = not na(a) and math.abs(c - e2) < a * 0.35 and not up and not dn and strength < 25
+    int sg = tight ? 0 : up and strength >= 32 ? 2 : dn and strength >= 32 ? -2 : c >= e2 ? 1 : -1
+    [sg, strength, tight]
+
+[s1, st1, t1] = tfSign(c1, e11, e21, r1, a1)
+[s2, st2, t2] = tfSign(c2, e12, e22, r2, a2)
+[s3, st3, t3] = tfSign(c3, e13, e23, r3, a3)
+[s4, st4, t4] = tfSign(c4, e14, e24, r4, a4)
+[s5, st5, t5] = tfSign(c5, e15, e25, r5, a5)
+
+biasName(int sg, bool tight) =>
+    tight ? "Tight Consolidation" : sg > 1 ? "Strong Bullish" : sg == 1 ? "Moderate Bullish" : sg < -1 ? "Strong Bearish" : sg == -1 ? "Moderate Bearish" : "Neutral"
+
+bucket(float v) =>
+    v >= 32 ? "Strong" : v >= 22 ? "Medium" : "Weak"
+
+dirOf(int sg) =>
+    sg > 0 ? 1 : sg < 0 ? -1 : 0
+
+int d1 = dirOf(s1)
+int d2 = dirOf(s2)
+int d3 = dirOf(s3)
+int d4 = dirOf(s4)
+int d5 = dirOf(s5)
+int bulls = (d1 > 0 ? 1 : 0) + (d2 > 0 ? 1 : 0) + (d3 > 0 ? 1 : 0) + (d4 > 0 ? 1 : 0) + (d5 > 0 ? 1 : 0)
+int bears = (d1 < 0 ? 1 : 0) + (d2 < 0 ? 1 : 0) + (d3 < 0 ? 1 : 0) + (d4 < 0 ? 1 : 0) + (d5 < 0 ? 1 : 0)
+bool htfRes = (bulls == 5 or bears == 5)
+int htfSign = bulls > bears ? 1 : bears > bulls ? -1 : 0
+
+agreeCount(int dir) =>
+    (d1 == dir ? 1 : 0) + (d2 == dir ? 1 : 0) + (d3 == dir ? 1 : 0) + (d4 == dir ? 1 : 0) + (d5 == dir ? 1 : 0)
+
+float hh50 = ta.highest(high, 50)
+float ll50 = ta.lowest(low, 50)
+float reg0 = ta.linreg(close, chanLen, 0)
+float reg1 = ta.linreg(close, chanLen, 1)
+float regSd = ta.stdev(close, chanLen)
+float regPrev0 = ta.linreg(close[1], chanLen, 0)
+float regPrev1 = ta.linreg(close[1], chanLen, 1)
+float regPrevSd = ta.stdev(close[1], chanLen)
+float hhVp = ta.highest(high, vpLook)
+float llVp = ta.lowest(low, vpLook)
+float atrPct = ta.percentrank(atr, 100)
+float loc = hh50 > ll50 ? math.max(0.0, math.min(100.0, 100.0 * (close - ll50) / (hh50 - ll50))) : 50.0
+float buyFrac = high > low ? (close - low) / (high - low) : 0.5
+float buyV = nz(volume) * buyFrac
+float sellV = nz(volume) - buyV
+float buySum = math.sum(buyV, 50)
+float volSum = math.sum(nz(volume), 50)
+float flow = volSum > 0 ? 100.0 * buySum / volSum : 50.0
+float imb = 2.0 * (flow - 50.0)
+float volSma = ta.sma(nz(volume), 20)
+bool volOk = volSma > 0 and nz(volume) >= volSma * volMin
+float erDen = math.sum(math.abs(close - close[1]), 20)
+float er = erDen > 0 ? math.abs(close - close[20]) / erDen : 0.0
+string regime = adx >= 22 or er >= 0.35 ? "Trending" : adx < 18 and er < 0.22 ? "Ranging" : "Transition"
+string volName = volState == 0 ? "Compression" : volState == 2 ? "Explosion (Breakout)" : volState == 3 ? "Expansion" : "Stable"
+
+bool inLondon = not na(time(timeframe.period, "0800-1700", "Europe/London"))
+bool inNy = not na(time(timeframe.period, "0800-1700", "America/New_York"))
+bool inCash = not na(time(timeframe.period, "0930-1600", "America/New_York"))
+bool inCustom = not na(time(timeframe.period, customSess, customTz))
+bool inSess = not wantSess ? true : useCustomSess ? inCustom : isNas ? inCash : inLondon or inNy
+string sessName = not wantSess ? "24h" : useCustomSess ? "Custom" : isNas ? "NY cash" : "London/NY"
+
+// --- persistent state. Updated only on confirmed bars. ---
+var int iTrend = 0
+var float iHi = na
+var float iLo = na
+var int iHiBar = na
+var int iLoBar = na
+var float sHi = na
+var float sLo = na
+var int sHiBar = na
+var int sLoBar = na
+var float shA = na
+var float shB = na
+var int shBa = na
+var int shBb = na
+var float slA = na
+var float slB = na
+var int slBa = na
+var int slBb = na
+var int posDir = 0
+var float entry = na
+var float slP = na
+var float tp1 = na
+var float tp2 = na
+var float tp3 = na
+var float trail = na
+var bool be = false
+var int planBar = na
+var bool hasPlan = false
+var int lastSig = na
+var string latest = "None"
+var float invPx = na
+var int invBar = na
+var int expDir = 0
+var float expOrigin = na
+var string candlePhase = "Consolidation"
+var string prevPhase = ""
+var line lnEn = na
+var line lnSl = na
+var line lnTr = na
+var line ln1 = na
+var line ln2 = na
+var line ln3 = na
+var array<label> lbs = array.new_label()
+var array<box> obBx = array.new_box()
+var array<float> obTop = array.new_float()
+var array<float> obBot = array.new_float()
+var array<int> obDir = array.new_int()
+var array<int> obKind = array.new_int()
+var array<bool> obOn = array.new_bool()
+var array<bool> obHit = array.new_bool()
+var array<box> fvgBx = array.new_box()
+var array<float> fvgTop = array.new_float()
+var array<float> fvgBot = array.new_float()
+var array<int> fvgDir = array.new_int()
+var array<bool> fvgOn = array.new_bool()
+var array<box> vpBx = array.new_box()
+
+bool buyPulse = false
+bool sellPulse = false
+bool tbPulse = false
+bool tePulse = false
+bool bosU = false
+bool bosD = false
+bool chU = false
+bool chD = false
+bool obBU = false
+bool obBD = false
+bool obRU = false
+bool obRD = false
+bool chUp = false
+bool chDn = false
+bool resBr = false
+bool supBr = false
+bool explPulse = false
+bool tp1Pulse = false
+bool sweepPulse = false
+bool sweepRes = false
+bool falsePulse = false
+bool revPulse = false
+
+f_lab(int x, float y, string txt, color bg, string sty) =>
+    label lb = label.new(x, y, txt, xloc.bar_index, yloc.price, bg, sty, color.white, size.tiny, force_overlay = true)
+    array.push(lbs, lb)
+    if array.size(lbs) > 450
+        label.delete(array.shift(lbs))
+    lb
+
+f_clearRisk() =>
+    if not na(lnEn)
+        line.delete(lnEn)
+        lnEn := na
+    if not na(lnSl)
+        line.delete(lnSl)
+        lnSl := na
+    if not na(lnTr)
+        line.delete(lnTr)
+        lnTr := na
+    if not na(ln1)
+        line.delete(ln1)
+        ln1 := na
+    if not na(ln2)
+        line.delete(ln2)
+        ln2 := na
+    if not na(ln3)
+        line.delete(ln3)
+        ln3 := na
+
+f_invalidate() =>
+    if hasPlan and not na(entry)
+        invPx := entry
+        invBar := planBar
+        f_lab(na(planBar) ? bar_index : planBar, entry, "Invalid", color.new(#464650, 0), label.style_label_left)
+    f_clearRisk()
+    hasPlan := false
+    posDir := 0
+    be := false
+
+f_shiftBox(array<box> bx, array<float> top, array<float> bot, array<int> dir, array<int> kind, array<bool> on, array<bool> hit, int cap) =>
+    if array.size(bx) > cap
+        box.delete(array.shift(bx))
+        array.shift(top)
+        array.shift(bot)
+        array.shift(dir)
+        array.shift(kind)
+        array.shift(on)
+        array.shift(hit)
+
+f_ob(int leftBar, float top, float bot, int dir, int kind) =>
+    color edge = dir > 0 ? color.new(#00B4AA, 0) : color.new(#C83C50, 0)
+    color fill = dir > 0 ? color.new(#005A6E, 75) : color.new(#781E32, 75)
+    string name = (kind >= 3 ? "Swing OB " : "Internal OB ") + (dir > 0 ? "Bullish" : "Bearish")
+    box b = box.new(leftBar, top, bar_index, bot, border_color = edge, bgcolor = fill, text = name, text_size = size.tiny, text_color = color.white, xloc = xloc.bar_index, force_overlay = true)
+    array.push(obBx, b)
+    array.push(obTop, top)
+    array.push(obBot, bot)
+    array.push(obDir, dir)
+    array.push(obKind, kind)
+    array.push(obOn, true)
+    array.push(obHit, false)
+    f_shiftBox(obBx, obTop, obBot, obDir, obKind, obOn, obHit, 8)
+
+obExtreme(bool fire, int fromBar, int dir) =>
+    int left = bar_index
+    float top = high
+    float bot = low
+    if fire
+        int span = math.max(0, math.min(60, bar_index - fromBar))
+        int best = 0
+        float bestPx = dir > 0 ? low : high
+        for j = 0 to span
+            if dir > 0 and low[j] < bestPx
+                bestPx := low[j]
+                best := j
+            if dir < 0 and high[j] > bestPx
+                bestPx := high[j]
+                best := j
+        left := bar_index - best
+        top := high[best]
+        bot := low[best]
+    [left, top, bot]
+
+f_fvg(float top, float bot, int dir) =>
+    color fill = dir > 0 ? color.new(#00463C, 70) : color.new(#5A1428, 70)
+    box b = box.new(bar_index - 2, top, bar_index, bot, border_color = fill, bgcolor = fill, text = dir > 0 ? "Bullish FVG" : "Bearish FVG", text_size = size.tiny, text_color = color.white, xloc = xloc.bar_index, force_overlay = true)
+    array.push(fvgBx, b)
+    array.push(fvgTop, top)
+    array.push(fvgBot, bot)
+    array.push(fvgDir, dir)
+    array.push(fvgOn, true)
+    if array.size(fvgBx) > 6
+        box.delete(array.shift(fvgBx))
+        array.shift(fvgTop)
+        array.shift(fvgBot)
+        array.shift(fvgDir)
+        array.shift(fvgOn)
+
+f_open(int dir) =>
+    if hasPlan and posDir != 0 and posDir != dir
+        f_invalidate()
+    float a = atr
+    if na(a) or a <= 0
+        a := syminfo.mintick * 10
+    float minD = a * minA
+    float maxD = a * maxA
+    float en = close
+    float slv = dir > 0 ? en - a * atrM : en + a * atrM
+    if dir > 0 and not na(sLo)
+        float dist = en - (sLo - a * 0.1)
+        if dist >= minD and dist <= maxD
+            slv := sLo - a * 0.1
+    if dir < 0 and not na(sHi)
+        float dist = (sHi + a * 0.1) - en
+        if dist >= minD and dist <= maxD
+            slv := sHi + a * 0.1
+    if dir > 0
+        slv := math.min(en - minD, math.max(en - maxD, slv))
+    else
+        slv := math.max(en + minD, math.min(en + maxD, slv))
+    float risk = math.abs(en - slv)
+    if risk < syminfo.mintick
+        risk := syminfo.mintick
+    posDir := dir
+    entry := en
+    slP := slv
+    trail := slv
+    be := false
+    hasPlan := true
+    planBar := bar_index
+    lastSig := bar_index
+    tp1 := en + dir * tp1R * risk
+    tp2 := en + dir * tp2R * risk
+    tp3 := en + dir * tp3R * risk
+    f_clearRisk()
+    if showRisk
+        lnEn := line.new(bar_index, en, bar_index + 1, en, extend = extend.right, color = color.new(#2878DC, 0), force_overlay = true)
+        lnSl := line.new(bar_index, slv, bar_index + 1, slv, extend = extend.right, color = color.new(#C8323C, 0), force_overlay = true)
+        lnTr := line.new(bar_index, slv, bar_index + 1, slv, extend = extend.right, color = color.new(#AA6E28, 0), style = line.style_dotted, force_overlay = true)
+        ln1 := line.new(bar_index, tp1, bar_index + 1, tp1, extend = extend.right, color = color.new(#00AA6E, 0), style = line.style_dashed, force_overlay = true)
+        ln2 := line.new(bar_index, tp2, bar_index + 1, tp2, extend = extend.right, color = color.new(#00AA6E, 0), style = line.style_dashed, force_overlay = true)
+        ln3 := line.new(bar_index, tp3, bar_index + 1, tp3, extend = extend.right, color = color.new(#00AA6E, 0), style = line.style_dashed, force_overlay = true)
+        f_lab(bar_index, en, "Entry " + str.tostring(en, format.mintick), color.new(#1E5AB4, 0), label.style_label_left)
+        f_lab(bar_index, slv, "SL " + str.tostring(slv, format.mintick), color.new(#C8323C, 0), label.style_label_left)
+        f_lab(bar_index, tp1, "TP 1 " + str.tostring(tp1, format.mintick), color.new(#008C5A, 0), label.style_label_left)
+        f_lab(bar_index, tp2, "TP 2 " + str.tostring(tp2, format.mintick), color.new(#008C5A, 0), label.style_label_left)
+        f_lab(bar_index, tp3, "TP 3 " + str.tostring(tp3, format.mintick), color.new(#008C5A, 0), label.style_label_left)
+
+phI = ta.pivothigh(high, iLen, iLen)
+plI = ta.pivotlow(low, iLen, iLen)
+phS = ta.pivothigh(high, sLen, sLen)
+plS = ta.pivotlow(low, sLen, sLen)
+bool crossUp = ta.crossover(wt1, wt2)
+bool crossDn = ta.crossunder(wt1, wt2)
+bool fireSu = false
+bool fireSd = false
+bool fireIu = false
+bool fireId = false
+int fromSu = bar_index
+int fromSd = bar_index
+int fromIu = bar_index
+int fromId = bar_index
+
+if barstate.isconfirmed and bar_index > math.max(sLen + 5, 80)
+    if posDir == 1 and not na(trail)
+        if low <= trail
+            posDir := 0
+        else
+            if not be and high >= tp1
+                be := true
+                trail := math.max(trail, entry)
+                tp1Pulse := true
+                if not na(lnTr)
+                    line.set_y1(lnTr, trail)
+                    line.set_y2(lnTr, trail)
+            if be
+                trail := math.max(trail, close - atr * trailM)
+                if not na(lnTr)
+                    line.set_y1(lnTr, trail)
+                    line.set_y2(lnTr, trail)
+    if posDir == -1 and not na(trail)
+        if high >= trail
+            posDir := 0
+        else
+            if not be and low <= tp1
+                be := true
+                trail := math.min(trail, entry)
+                tp1Pulse := true
+                if not na(lnTr)
+                    line.set_y1(lnTr, trail)
+                    line.set_y2(lnTr, trail)
+            if be
+                trail := math.min(trail, close + atr * trailM)
+                if not na(lnTr)
+                    line.set_y1(lnTr, trail)
+                    line.set_y2(lnTr, trail)
+
+    int resNow = loc >= 55 and rsi >= 55 ? 1 : loc <= 45 and rsi <= 45 ? -1 : 0
+    if not na(sHi) and high > sHi and close < sHi
+        sweepPulse := true
+        falsePulse := true
+        if showStruct
+            f_lab(bar_index, high, "Liquidity Sweep", color.new(#782850, 0), label.style_label_down)
+            f_lab(bar_index, low, "False Break", color.new(#503050, 0), label.style_label_up)
+        if resNow < 0
+            sweepRes := true
+            if posDir > 0
+                f_invalidate()
+    else if not na(iHi) and high > iHi and close < iHi
+        sweepPulse := true
+        falsePulse := true
+        if showStruct
+            f_lab(bar_index, high, "Liquidity Sweep", color.new(#782850, 0), label.style_label_down)
+        if resNow < 0
+            sweepRes := true
+            if posDir > 0
+                f_invalidate()
+    if not na(sLo) and low < sLo and close > sLo
+        sweepPulse := true
+        falsePulse := true
+        if showStruct
+            f_lab(bar_index, low, "Liquidity Sweep", color.new(#005040, 0), label.style_label_up)
+            f_lab(bar_index, high, "False Break", color.new(#503050, 0), label.style_label_down)
+        if resNow > 0
+            sweepRes := true
+            if posDir < 0
+                f_invalidate()
+    else if not na(iLo) and low < iLo and close > iLo
+        sweepPulse := true
+        falsePulse := true
+        if showStruct
+            f_lab(bar_index, low, "Liquidity Sweep", color.new(#005040, 0), label.style_label_up)
+        if resNow > 0
+            sweepRes := true
+            if posDir < 0
+                f_invalidate()
+
+    if not na(sHi) and close > sHi
+        bool valid = resNow > 0
+        if valid
+            if showStruct
+                f_lab(bar_index, high, "Valid Break", color.new(#00A090, 0), label.style_label_down)
+            if posDir < 0
+                f_invalidate()
+            resBr := true
+        else
+            falsePulse := true
+            if showStruct
+                f_lab(bar_index, high, "False Break", color.new(#503050, 0), label.style_label_down)
+        if showOb and not na(sHiBar)
+            fireSu := true
+            fromSu := sHiBar
+        sHi := na
+    if not na(sLo) and close < sLo
+        bool valid = resNow < 0
+        if valid
+            if showStruct
+                f_lab(bar_index, low, "Valid Break", color.new(#00A090, 0), label.style_label_up)
+            if posDir > 0
+                f_invalidate()
+            supBr := true
+        else
+            falsePulse := true
+            if showStruct
+                f_lab(bar_index, low, "False Break", color.new(#503050, 0), label.style_label_up)
+        if showOb and not na(sLoBar)
+            fireSd := true
+            fromSd := sLoBar
+        sLo := na
+
+    if not na(iHi) and close > iHi
+        bool wasDown = iTrend < 0
+        iTrend := 1
+        bool valid = resNow > 0
+        if wasDown
+            chU := true
+            if showEarly
+                f_lab(bar_index, low, "Trend Bull", color.new(#2850B4, 0), label.style_label_up)
+            if posDir < 0
+                f_invalidate()
+        else
+            bosU := true
+        if not valid
+            falsePulse := true
+            bosU := false
+        if showStruct
+            f_lab(bar_index, close, wasDown ? "CHoCH" : "BOS", wasDown ? color.new(#5090FF, 0) : color.new(#00C8BE, 0), label.style_label_left)
+        if showOb and not na(iHiBar)
+            fireIu := true
+            fromIu := iHiBar
+        iHi := na
+    if not na(iLo) and close < iLo
+        bool wasUp = iTrend > 0
+        iTrend := -1
+        bool valid = resNow < 0
+        if wasUp
+            chD := true
+            if showEarly
+                f_lab(bar_index, high, "Trend Bear", color.new(#963C5A, 0), label.style_label_down)
+            if posDir > 0
+                f_invalidate()
+        else
+            bosD := true
+        if not valid
+            falsePulse := true
+            bosD := false
+        if showStruct
+            f_lab(bar_index, close, wasUp ? "CHoCH" : "BOS", color.new(#E6465A, 0), label.style_label_left)
+        if showOb and not na(iLoBar)
+            fireId := true
+            fromId := iLoBar
+        iLo := na
+
+    if not na(phI)
+        iHi := phI
+        iHiBar := bar_index - iLen
+    if not na(plI)
+        iLo := plI
+        iLoBar := bar_index - iLen
+    if not na(phS)
+        sHi := phS
+        sHiBar := bar_index - sLen
+        shA := shB
+        shBa := shBb
+        shB := phS
+        shBb := bar_index - sLen
+        if showStruct
+            f_lab(bar_index - sLen, phS, "Resistance", color.new(#786014, 0), label.style_label_down)
+    if not na(plS)
+        sLo := plS
+        sLoBar := bar_index - sLen
+        slA := slB
+        slBa := slBb
+        slB := plS
+        slBb := bar_index - sLen
+        if showStruct
+            f_lab(bar_index - sLen, plS, "Support", color.new(#005028, 0), label.style_label_up)
+
+    if showFvg and atr > 0 and low > high[2] and close[1] > high[2] and (low - high[2]) > atr * 0.15
+        f_fvg(low, high[2], 1)
+    if showFvg and atr > 0 and high < low[2] and close[1] < low[2] and (low[2] - high) > atr * 0.15
+        f_fvg(low[2], high, -1)
+
+    if array.size(obBx) > 0
+        for i = 0 to array.size(obBx) - 1
+            if array.get(obOn, i)
+                box.set_right(array.get(obBx, i), bar_index)
+                float top = array.get(obTop, i)
+                float bot = array.get(obBot, i)
+                int d = array.get(obDir, i)
+                bool overlaps = d > 0 ? low <= top and high >= bot : high >= bot and low <= top
+                if overlaps and not array.get(obHit, i)
+                    array.set(obHit, i, true)
+                    if d > 0
+                        obRU := true
+                    else
+                        obRD := true
+                if d > 0 and low < bot
+                    array.set(obOn, i, false)
+                    obBU := true
+                if d < 0 and high > top
+                    array.set(obOn, i, false)
+                    obBD := true
+    if array.size(fvgBx) > 0
+        for i = 0 to array.size(fvgBx) - 1
+            if array.get(fvgOn, i)
+                box.set_right(array.get(fvgBx, i), bar_index)
+                if array.get(fvgDir, i) > 0 and low <= array.get(fvgBot, i)
+                    array.set(fvgOn, i, false)
+                if array.get(fvgDir, i) < 0 and high >= array.get(fvgTop, i)
+                    array.set(fvgOn, i, false)
+
+    if not na(shA) and not na(shB) and shBb != shBa and shB < shA
+        float lv = shB + (shB - shA) * (bar_index - shBb) / (shBb - shBa)
+        if close > lv and close[1] <= lv
+            resBr := true
+    if not na(slA) and not na(slB) and slBb != slBa and slB > slA
+        float lv = slB + (slB - slA) * (bar_index - slBb) / (slBb - slBa)
+        if close < lv and close[1] >= lv
+            supBr := true
+
+    float m0 = regPrev0
+    float m1 = regPrev1
+    float sd1 = regPrevSd
+    float proj = m0 + (m0 - m1)
+    if close > proj + sd1 and close[1] <= m0 + sd1
+        chUp := true
+    if close < proj - sd1 and close[1] >= m0 - sd1
+        chDn := true
+    if volState == 2 and volState[1] != 2
+        explPulse := true
+
+    float rng = high - low
+    float bodyR = rng > 0 ? math.abs(close - open) / rng : 0.0
+    bool expBar = bodyR >= bodyMin and rng >= atr * expAtr
+    bool brokeOrigin = expDir == 1 and not na(expOrigin) and close < expOrigin or expDir == -1 and not na(expOrigin) and close > expOrigin
+    bool weakBack = expDir == 1 and close < close[1] and close > nz(expOrigin, close) or expDir == -1 and close > close[1] and close < nz(expOrigin, close)
+    if chU or chD or brokeOrigin
+        candlePhase := "Reversal"
+        revPulse := true
+        expDir := 0
+    else if expBar
+        candlePhase := "Expansion"
+        expDir := close >= open ? 1 : -1
+        expOrigin := expDir == 1 ? low : high
+    else if expDir != 0 and weakBack and bodyR < 0.5 and rng < atr
+        candlePhase := "Retracement"
+    else if rng < atr * 0.70 and math.abs(close - close[3]) < atr * 0.50
+        candlePhase := "Consolidation"
+    if showPhaseLb and candlePhase != prevPhase
+        f_lab(bar_index, high, candlePhase, candlePhase == "Expansion" ? color.new(#00A0B4, 0) : candlePhase == "Reversal" ? color.new(#C8A020, 0) : candlePhase == "Retracement" ? color.new(#C86A20, 0) : color.new(#3A4250, 0), label.style_label_down)
+        prevPhase := candlePhase
+
+    int dir = 0
+    if mode == "Range"
+        if loc <= 30 and crossUp
+            dir := 1
+        if loc >= 70 and crossDn
+            dir := -1
+    else
+        if crossUp or bosU
+            dir := 1
+        if crossDn or bosD
+            dir := -1
+        if crossUp
+            dir := 1
+        if crossDn
+            dir := -1
+    bool cooled = na(lastSig) or bar_index - lastSig >= cool
+    bool momOk = dir > 0 ? wt1 < 60 : dir < 0 ? wt1 > -60 : false
+    int agree = agreeCount(dir)
+    bool mtfOk = not strictMtf or agree >= mtfNeed
+    bool resOk = dir > 0 ? resNow > 0 : dir < 0 ? resNow < 0 : false
+    float score = 20.0
+    if resOk
+        score += 20
+    if dir > 0 and imb > 0
+        score += 12 * math.min(imb / 25.0, 1)
+    if dir < 0 and imb < 0
+        score += 12 * math.min(-imb / 25.0, 1)
+    score += 12 * math.min(adx / 35.0, 1)
+    score += dir > 0 ? (loc <= 50 ? 12 : 5) : dir < 0 ? (loc >= 50 ? 12 : 5) : 0
+    score += 14 * agree / 5.0
+    score += volState == 2 ? 10 : volState == 3 ? 8 : volState == 1 ? 4 : 2
+    bool pass = dir != 0 and cooled and momOk and resOk and volOk and mtfOk and inSess and score >= minScore
+    if pass and ((dir == 1 and showSig) or (dir == -1 and showSig))
+        f_open(dir)
+        latest := dir > 0 ? "Buy" : "Sell"
+        if dir > 0
+            buyPulse := true
+            f_lab(bar_index, low, "Buy", color.new(#00965A, 0), label.style_label_up)
+        else
+            sellPulse := true
+            f_lab(bar_index, high, "Sell", color.new(#BE1E32, 0), label.style_label_down)
+    if chU
+        tbPulse := true
+    if chD
+        tePulse := true
+
+[lSu, tSu, bSu] = obExtreme(fireSu, fromSu, 1)
+[lSd, tSd, bSd] = obExtreme(fireSd, fromSd, -1)
+[lIu, tIu, bIu] = obExtreme(fireIu, fromIu, 1)
+[lId, tId, bId] = obExtreme(fireId, fromId, -1)
+if fireSu
+    f_ob(lSu, tSu, bSu, 1, 3)
+if fireSd
+    f_ob(lSd, tSd, bSd, -1, 3)
+if fireIu
+    f_ob(lIu, tIu, bIu, 1, 1)
+if fireId
+    f_ob(lId, tId, bId, -1, 1)
+
+color phaseBg = candlePhase == "Expansion" and expDir >= 0 ? color.new(#00C8DC, 88) : candlePhase == "Expansion" ? color.new(#FF5082, 88) : candlePhase == "Retracement" ? color.new(#C86A20, 90) : candlePhase == "Reversal" ? color.new(#E0B020, 88) : color.new(#6A7384, 92)
+bgcolor(showPhaseBg ? phaseBg : na, title = "Candle phase", force_overlay = true)
+
+plot(showKernel ? kern : na, "Kernel", color.new(#BE3CDC, 0), 2, force_overlay = true)
+plot(showKernel ? kernF : na, "Fast kernel", color.new(#00DCDC, 0), 1, force_overlay = true)
+
+pu = plot(showOsc ? slow + 18 : na, "Structure upper", color.new(#963CD2, 45))
+pd = plot(showOsc ? slow - 18 : na, "Structure lower", color.new(#0096A0, 45))
+fill(pu, pd, color.new(#6E2896, 82), "Structure cloud")
+plot(showOsc ? slow : na, "Structure", color.white, 2)
+plot(showOsc ? wt1 : na, "Oscillation", color.new(#00DCDC, 0), 1)
+float hist = wt1 - wt2
+color hCol = hist >= 0 ? (hist >= hist[1] ? color.new(#00BE6E, 0) : color.new(#006E46, 0)) : (hist <= hist[1] ? color.new(#BE283C, 0) : color.new(#781E2D, 0))
+plot(showOsc ? hist : na, "Momentum", hCol, 3, plot.style_histogram)
+hline(60, "OB", color.new(color.gray, 50), hline.style_dotted)
+hline(-60, "OS", color.new(color.gray, 50), hline.style_dotted)
+hline(0, "Zero", color.new(color.gray, 40))
+
+// Rolling profile and the current dealing range. Rebuilt once per confirmed bar, from closed prices only.
+var box premBx = na
+var box discBx = na
+var line eqLn = na
+var line pocLn = na
+var line vahLn = na
+var line valLn = na
+var line chULn = na
+var line chMLn = na
+var line chDLn = na
+var line tlLn = na
+var label premLb = na
+var label discLb = na
+var label eqLb = na
+
+if barstate.islast and barstate.isconfirmed
+    if showZones and not na(sHi) and not na(sLo) and sHi > sLo
+        if not na(premBx)
+            box.delete(premBx)
+        if not na(discBx)
+            box.delete(discBx)
+        if not na(eqLn)
+            line.delete(eqLn)
+        if not na(premLb)
+            label.delete(premLb)
+        if not na(discLb)
+            label.delete(discLb)
+        if not na(eqLb)
+            label.delete(eqLb)
+        float eq = (sHi + sLo) * 0.5
+        int left = math.min(nz(sHiBar, bar_index - 10), nz(sLoBar, bar_index - 10))
+        premBx := box.new(left, sHi, bar_index, eq, border_color = color.new(#781428, 40), bgcolor = color.new(#5A1428, 82), xloc = xloc.bar_index, extend = extend.right, force_overlay = true)
+        discBx := box.new(left, eq, bar_index, sLo, border_color = color.new(#005046, 40), bgcolor = color.new(#00463C, 82), xloc = xloc.bar_index, extend = extend.right, force_overlay = true)
+        eqLn := line.new(left, eq, bar_index, eq, extend = extend.right, color = color.new(#969AA6, 0), style = line.style_dashed, force_overlay = true)
+        premLb := label.new(bar_index, sHi, "Premium", xloc.bar_index, yloc.price, color.new(#5A1428, 20), label.style_label_left, color.new(#FFA0B4, 0), size.tiny, force_overlay = true)
+        discLb := label.new(bar_index, sLo, "Discount", xloc.bar_index, yloc.price, color.new(#00463C, 20), label.style_label_left, color.new(#78E6D2, 0), size.tiny, force_overlay = true)
+        eqLb := label.new(bar_index, eq, "Equilibrium", xloc.bar_index, yloc.price, color.new(#1E2430, 10), label.style_label_left, color.white, size.tiny, force_overlay = true)
+    if not na(shB) and not na(shA) and shB < shA and not na(shBb) and not na(shBa)
+        if not na(tlLn)
+            line.delete(tlLn)
+        tlLn := line.new(shBa, shA, shBb, shB, extend = extend.right, color = color.new(#DC3C50, 0), width = 2, force_overlay = true)
+    else if not na(slB) and not na(slA) and slB > slA and not na(slBb) and not na(slBa)
+        if not na(tlLn)
+            line.delete(tlLn)
+        tlLn := line.new(slBa, slA, slBb, slB, extend = extend.right, color = color.new(#DC3C50, 0), width = 2, force_overlay = true)
+    float mid0 = reg0
+    float mid1 = reg1
+    float sd = regSd
+    float slp = mid0 - mid1
+    if not na(chULn)
+        line.delete(chULn)
+    if not na(chMLn)
+        line.delete(chMLn)
+    if not na(chDLn)
+        line.delete(chDLn)
+    int xL = bar_index - chanLen
+    chULn := line.new(xL, mid0 - slp * chanLen + sd, bar_index, mid0 + sd, color = color.new(#9650DC, 0), style = line.style_dotted, force_overlay = true)
+    chMLn := line.new(xL, mid0 - slp * chanLen, bar_index, mid0, color = color.new(#9650DC, 0), style = line.style_dotted, force_overlay = true)
+    chDLn := line.new(xL, mid0 - slp * chanLen - sd, bar_index, mid0 - sd, color = color.new(#9650DC, 0), style = line.style_dotted, force_overlay = true)
+
+    if showVp
+        while array.size(vpBx) > 0
+            box.delete(array.pop(vpBx))
+        if not na(pocLn)
+            line.delete(pocLn)
+        if not na(vahLn)
+            line.delete(vahLn)
+        if not na(valLn)
+            line.delete(valLn)
+        float hh = hhVp
+        float llv = llVp
+        if hh > llv and binN >= 8
+            float step = (hh - llv) / binN
+            array<float> vols = array.new_float(binN, 0.0)
+            array<float> buys = array.new_float(binN, 0.0)
+            for k = 0 to vpLook - 1
+                float lo = low[k]
+                float hi = math.max(high[k], lo + syminfo.mintick)
+                int b1 = math.max(0, math.min(binN - 1, int((lo - llv) / step)))
+                int b2 = math.max(0, math.min(binN - 1, int((hi - llv) / step)))
+                if b2 < b1
+                    int tmp = b1
+                    b1 := b2
+                    b2 := tmp
+                int span = b2 - b1 + 1
+                float each = nz(volume[k]) / span
+                float bf = hi > lo ? (close[k] - lo) / (hi - lo) : 0.5
+                for b = b1 to b2
+                    array.set(vols, b, array.get(vols, b) + each)
+                    array.set(buys, b, array.get(buys, b) + each * bf)
+            int poc = 0
+            float total = 0.0
+            for b = 0 to binN - 1
+                total += array.get(vols, b)
+                if array.get(vols, b) > array.get(vols, poc)
+                    poc := b
+            float acc = array.get(vols, poc)
+            int loB = poc
+            int hiB = poc
+            float target = total * 0.70
+            while acc < target and (loB > 0 or hiB < binN - 1)
+                float leftV = loB > 0 ? array.get(vols, loB - 1) : -1.0
+                float rightV = hiB < binN - 1 ? array.get(vols, hiB + 1) : -1.0
+                if rightV >= leftV and hiB < binN - 1
+                    hiB += 1
+                    acc += array.get(vols, hiB)
+                else if loB > 0
+                    loB -= 1
+                    acc += array.get(vols, loB)
+                else
+                    break
+            float maxV = math.max(array.get(vols, poc), syminfo.mintick)
+            float pocVol = array.get(vols, poc)
+            for b = 0 to binN - 1
+                float y1 = llv + b * step
+                float y2 = y1 + step
+                int wBars = int(math.round(math.max(1.0, 18.0 * array.get(vols, b) / maxV)))
+                bool bullBin = array.get(buys, b) >= array.get(vols, b) - array.get(buys, b)
+                color col = bullBin ? color.new(#00B4BE, 15) : color.new(#C8288C, 15)
+                array.push(vpBx, box.new(bar_index + 2, y2, bar_index + 2 + wBars, y1, border_color = col, bgcolor = col, xloc = xloc.bar_index, force_overlay = true))
+                if b == poc or array.get(vols, b) >= pocVol * 0.65
+                    color zc = b == poc ? color.new(#F0E2A0, 78) : bullBin ? color.new(#00C8BE, 88) : color.new(#FF5090, 88)
+                    string ztxt = b == poc ? "Core cost" : "Liquidity"
+                    array.push(vpBx, box.new(bar_index - vpLook, y2, bar_index, y1, border_color = zc, bgcolor = zc, text = ztxt, text_size = size.tiny, text_color = color.white, xloc = xloc.bar_index, force_overlay = true))
+            float pocPx = llv + (poc + 0.5) * step
+            float vah = llv + (hiB + 1) * step
+            float val = llv + loB * step
+            pocLn := line.new(bar_index - 30, pocPx, bar_index, pocPx, extend = extend.right, color = color.white, style = line.style_dotted, width = 2, force_overlay = true)
+            vahLn := line.new(bar_index - 30, vah, bar_index, vah, extend = extend.right, color = color.new(#C8A0FF, 0), style = line.style_dotted, force_overlay = true)
+            valLn := line.new(bar_index - 30, val, bar_index, val, extend = extend.right, color = color.new(#00C8BE, 0), style = line.style_dotted, force_overlay = true)
+
+var table resT = table.new(position.top_right, 2, 8, bgcolor = color.new(#080C16, 8), frame_color = color.new(#00C8DC, 0), frame_width = 1, border_width = 0, force_overlay = true)
+var table dash = table.new(position.middle_right, 2, 36, bgcolor = color.new(#080C16, 8), frame_color = color.new(#00AADC, 0), frame_width = 1, border_width = 0, force_overlay = true)
+var table thermo = table.new(position.bottom_right, 10, 2, bgcolor = color.new(#080C16, 8), frame_color = color.new(#00A0AA, 0), frame_width = 1, border_width = 0, force_overlay = true)
+
+if barstate.islast and showDash
+    color bg = color.new(#080C16, 5)
+    color tx = color.new(#DCE2EC, 0)
+    color dim = color.new(#96A0B4, 0)
+    color bull = color.new(#00D2AA, 0)
+    color bear = color.new(#FF5082, 0)
+    color warn = color.new(#F0BE46, 0)
+    color cyan = color.new(#00C8DC, 0)
+    float vpScore = loc
+    float momScore = rsi
+    float core = (vpScore + momScore) * 0.5
+    int resDir = vpScore >= 55 and momScore >= 55 ? 1 : vpScore <= 45 and momScore <= 45 ? -1 : 0
+    string bias = resDir > 0 ? "Resonance Bull" : resDir < 0 ? "Resonance Bear" : "Waiting"
+    string stance = candlePhase == "Expansion" and expDir >= 0 ? "Expansion - Look For Longs" : candlePhase == "Expansion" ? "Expansion - Look For Shorts" : candlePhase == "Retracement" and expDir >= 0 ? "Retracement - Buy Dips" : candlePhase == "Retracement" ? "Retracement - Sell Rallies" : candlePhase == "Reversal" ? "Reversal - Wait For Confirmation" : "Consolidation - Cash is King"
+    string engine = wantSess and not inSess ? "Session closed" : not na(lastSig) and bar_index - lastSig < cool ? "Cooling " + str.tostring(cool - (bar_index - lastSig)) : "Ready"
+    int liveDir = resDir != 0 ? resDir : posDir
+    if not na(lastSig) and bar_index - lastSig <= 30
+        liveDir := latest == "Buy" ? 1 : latest == "Sell" ? -1 : liveDir
+    int agree = agreeCount(liveDir == 0 ? 1 : liveDir)
+    float conf = 20.0
+    if resDir == liveDir and liveDir != 0
+        conf += 20
+    if liveDir > 0 and imb > 0
+        conf += 12 * math.min(imb / 25.0, 1)
+    if liveDir < 0 and imb < 0
+        conf += 12 * math.min(-imb / 25.0, 1)
+    conf += 12 * math.min(nz(adx) / 35.0, 1)
+    conf += liveDir > 0 ? (loc <= 50 ? 12 : 5) : liveDir < 0 ? (loc >= 50 ? 12 : 5) : 0
+    conf += 14.0 * agree / 5.0
+    conf += volState == 2 ? 10 : volState == 3 ? 8 : volState == 1 ? 4 : 2
+    bool fresh = not na(lastSig) and bar_index - lastSig <= 30 and (latest == "Buy" or latest == "Sell")
+    bool step1 = stance != "Consolidation - Cash is King" and stance != "Reversal - Wait For Confirmation"
+    bool step2 = fresh and ((liveDir > 0 and latest == "Buy") or (liveDir < 0 and latest == "Sell"))
+    bool step3 = resDir == liveDir and liveDir != 0
+    bool step4 = mode == "Range" ? (volState == 0 or volState == 1) : (volState == 2 or volState == 3)
+    bool run3 = (d1 == liveDir and d2 == liveDir and d3 == liveDir) or (d2 == liveDir and d3 == liveDir and d4 == liveDir) or (d3 == liveDir and d4 == liveDir and d5 == liveDir)
+    bool htfAgainst = liveDir != 0 and d4 == -liveDir and d5 == -liveDir
+    int step5 = not run3 ? 0 : htfAgainst ? 2 : 1
+    float thLive = hh50 > ll50 ? math.max(0.0, math.min(100.0, 100.0 * (close - ll50) / (hh50 - ll50))) : 50.0
+    int step6 = liveDir > 0 ? (thLive > 80 ? 0 : thLive >= 20 and thLive <= 60 ? 1 : 2) : liveDir < 0 ? (thLive < 20 ? 0 : thLive >= 40 and thLive <= 80 ? 1 : 2) : 0
+    int step7 = liveDir > 0 and imb >= 8 ? 1 : liveDir < 0 and imb <= -8 ? 1 : math.abs(imb) < 8 ? 2 : 0
+    int passes = (step1 ? 1 : 0) + (step2 ? 1 : 0) + (step3 ? 1 : 0) + (step4 ? 1 : 0) + (step5 == 1 ? 1 : 0) + (step6 == 1 ? 1 : 0) + (step7 == 1 ? 1 : 0)
+    bool hard = not step1 or not step3 or not step4 or step6 == 0
+    string sizeTxt = hard ? "Stand aside" : passes >= 7 ? "Full size" : passes >= 5 ? "Half size" : passes >= 4 ? "Light 30%" : "Stand aside"
+    int tiers = 0
+    float atrRank = atrPct
+    if atrRank >= deadPct
+        tiers += 1
+    if volOk
+        tiers += 1
+    if liveDir > 0 and wt1 < 60 or liveDir < 0 and wt1 > -60 or liveDir == 0
+        tiers += 1
+    if math.abs(wt1 - wt2) >= math.abs(wt1[1] - wt2[1]) or volState != 0
+        tiers += 1
+    if liveDir != 0 and agree >= 3
+        tiers += 1
+    if na(lastSig) or bar_index - lastSig >= cool
+        tiers += 1
+    if fresh
+        tiers += 1
+    if mode == "Range" ? (volState == 0 or volState == 1) : (volState == 2 or volState == 3)
+        tiers += 1
+    string adxTag = adx < 20 ? "Weak" : adx < 30 ? "Medium" : "Strong"
+    string flowTxt = imb >= 25 ? "Bulls Dominant (" + str.tostring(math.abs(imb), "#") + "%)" : imb >= 8 ? "Bulls in Control (" + str.tostring(math.abs(imb), "#") + "%)" : imb <= -25 ? "Bears Dominant (" + str.tostring(math.abs(imb), "#") + "%)" : imb <= -8 ? "Bears in Control (" + str.tostring(math.abs(imb), "#") + "%)" : "Balanced (" + str.tostring(math.abs(imb), "#") + "%)"
+    string thTag = thLive > 60 ? "Bullish Markup" : thLive < 40 ? "Bearish Markdown" : "Equilibrium Zone"
+
+    table.cell(resT, 0, 0, "Quantum AI - Resonance Engine", text_color = cyan, text_size = size.small, bgcolor = bg)
+    table.merge_cells(resT, 0, 0, 1, 0)
+    table.cell(resT, 0, 1, "Independent Signals", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(resT, 0, 1, 1, 1)
+    table.cell(resT, 0, 2, "Volume Profile", text_color = tx, text_size = size.small, bgcolor = bg)
+    table.cell(resT, 1, 2, str.tostring(vpScore, "#.0") + "  " + (vpScore >= 55 ? "Bullish" : vpScore <= 45 ? "Bearish" : "Neutral"), text_color = vpScore >= 55 ? bull : vpScore <= 45 ? bear : tx, text_size = size.small, text_halign = text.align_right, bgcolor = bg)
+    table.cell(resT, 0, 3, "Momentum Trend", text_color = tx, text_size = size.small, bgcolor = bg)
+    table.cell(resT, 1, 3, str.tostring(momScore, "#.0") + "  " + (momScore >= 55 ? "Bullish" : momScore <= 45 ? "Bearish" : "Neutral"), text_color = momScore >= 55 ? bull : momScore <= 45 ? bear : tx, text_size = size.small, text_halign = text.align_right, bgcolor = bg)
+    table.cell(resT, 0, 4, "Core Resonance", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(resT, 0, 4, 1, 4)
+    table.cell(resT, 0, 5, "Core Resonance", text_color = tx, text_size = size.small, bgcolor = bg)
+    table.cell(resT, 1, 5, str.tostring(core, "#.0") + "  " + (core >= 55 ? "Bullish" : core <= 45 ? "Bearish" : "Mixed"), text_color = core >= 55 ? bull : core <= 45 ? bear : warn, text_size = size.small, text_halign = text.align_right, bgcolor = bg)
+    table.cell(resT, 0, 6, "Market Bias", text_color = tx, text_size = size.small, bgcolor = bg)
+    table.cell(resT, 1, 6, bias, text_color = resDir > 0 ? bull : resDir < 0 ? bear : warn, text_size = size.small, text_halign = text.align_right, bgcolor = bg)
+    table.cell(resT, 0, 7, "Candle Phase", text_color = tx, text_size = size.small, bgcolor = bg)
+    table.cell(resT, 1, 7, candlePhase, text_color = candlePhase == "Expansion" ? cyan : candlePhase == "Reversal" ? warn : tx, text_size = size.small, text_halign = text.align_right, bgcolor = bg)
+
+    table.cell(dash, 0, 0, "Quantum AI [" + mode + " Mode]", text_color = cyan, text_size = size.small, bgcolor = bg)
+    table.merge_cells(dash, 0, 0, 1, 0)
+    table.cell(dash, 0, 1, symName + "  ·  " + sessName + (wantSess ? (inSess ? " open" : " closed") : ""), text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(dash, 0, 1, 1, 1)
+    table.cell(dash, 0, 2, "AI Stance: " + stance, text_color = str.contains(stance, "Long") or str.contains(stance, "Buy") ? bull : str.contains(stance, "Short") or str.contains(stance, "Sell") ? bear : warn, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(dash, 0, 2, 1, 2)
+    table.cell(dash, 0, 3, "Candle Phase", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 3, candlePhase, text_color = candlePhase == "Expansion" ? cyan : candlePhase == "Reversal" ? warn : tx, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 4, "Multi-TF Radar", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(dash, 0, 4, 1, 4)
+    table.cell(dash, 0, 5, tf1 + "  " + biasName(s1, t1), text_color = d1 > 0 ? bull : d1 < 0 ? bear : dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 5, str.tostring(st1, "#.0") + " (" + bucket(st1) + ")", text_color = d1 > 0 ? bull : d1 < 0 ? bear : dim, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 6, tf2 + "  " + biasName(s2, t2), text_color = d2 > 0 ? bull : d2 < 0 ? bear : dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 6, str.tostring(st2, "#.0") + " (" + bucket(st2) + ")", text_color = d2 > 0 ? bull : d2 < 0 ? bear : dim, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 7, tf3 + "  " + biasName(s3, t3), text_color = d3 > 0 ? bull : d3 < 0 ? bear : dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 7, str.tostring(st3, "#.0") + " (" + bucket(st3) + ")", text_color = d3 > 0 ? bull : d3 < 0 ? bear : dim, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 8, tf4 + "  " + biasName(s4, t4), text_color = d4 > 0 ? bull : d4 < 0 ? bear : dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 8, str.tostring(st4, "#.0") + " (" + bucket(st4) + ")", text_color = d4 > 0 ? bull : d4 < 0 ? bear : dim, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 9, tf5 + "  " + biasName(s5, t5), text_color = d5 > 0 ? bull : d5 < 0 ? bear : dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 9, str.tostring(st5, "#.0") + " (" + bucket(st5) + ")", text_color = d5 > 0 ? bull : d5 < 0 ? bear : dim, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 10, "Core Analytics", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(dash, 0, 10, 1, 10)
+    table.cell(dash, 0, 11, "HTF Resonance", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 11, htfRes ? "Resonant" : "No Resonance", text_color = htfRes ? bull : warn, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 12, "Market Regime", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 12, regime, text_color = tx, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 13, "Volatility State", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 13, volName, text_color = volState == 2 or volState == 3 ? bull : warn, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 14, "Volume Flow", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 14, flowTxt, text_color = imb > 8 ? bull : imb < -8 ? bear : tx, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 15, "Signal Tracker", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(dash, 0, 15, 1, 15)
+    table.cell(dash, 0, 16, "Latest Signal", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 16, latest, text_color = latest == "Buy" ? bull : latest == "Sell" ? bear : tx, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 17, "Confidence Score", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 17, str.tostring(conf, "#.0") + " pts", text_color = conf >= minScore ? bull : warn, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 18, "Current ADX", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 18, str.tostring(nz(adx), "#.0") + " (" + adxTag + ")", text_color = tx, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 19, "Engine Filter", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 19, engine, text_color = engine == "Ready" ? bull : warn, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 20, "Filter tiers", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 20, str.tostring(tiers) + "/8", text_color = tx, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 21, "7-Step Checklist", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(dash, 0, 21, 1, 21)
+    table.cell(dash, 0, 22, str.tostring(passes) + "/7", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 22, sizeTxt, text_color = sizeTxt == "Stand aside" ? bear : bull, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 23, "1 AI stance", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 23, step1 ? "Pass" : "Fail", text_color = step1 ? bull : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 24, "2 Main label", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 24, step2 ? "Pass" : "Fail", text_color = step2 ? bull : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 25, "3 Resonance", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 25, step3 ? "Pass" : "Fail", text_color = step3 ? bull : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 26, "4 Volatility", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 26, step4 ? "Pass" : "Fail", text_color = step4 ? bull : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 27, "5 Cross-cycle", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 27, step5 == 1 ? "Pass" : step5 == 2 ? "Warn" : "Fail", text_color = step5 == 1 ? bull : step5 == 2 ? warn : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 28, "6 Thermometer", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 28, step6 == 1 ? "Pass" : step6 == 2 ? "Warn" : "Fail", text_color = step6 == 1 ? bull : step6 == 2 ? warn : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 29, "7 Volume flow", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 29, step7 == 1 ? "Pass" : step7 == 2 ? "Warn" : "Fail", text_color = step7 == 1 ? bull : step7 == 2 ? warn : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 30, "Position Status", text_color = dim, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(dash, 0, 30, 1, 30)
+    table.cell(dash, 0, 31, "Position Stance", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 31, posDir > 0 ? "Long Active" : posDir < 0 ? "Short Active" : "Flat", text_color = posDir > 0 ? bull : posDir < 0 ? bear : dim, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 32, "Active Stop Level", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 32, posDir == 0 or na(trail) ? "-" : str.tostring(trail, format.mintick), text_color = tx, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 33, "Size guide", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 33, sizeTxt, text_color = sizeTxt == "Stand aside" ? bear : bull, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 34, "Volume filter", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 34, volOk ? "Passed" : "Noise", text_color = volOk ? bull : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+    table.cell(dash, 0, 35, "MTF confirm", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.cell(dash, 1, 35, (not strictMtf or agree >= mtfNeed) ? str.tostring(agree) + "/" + str.tostring(mtfNeed) : "Blocked " + str.tostring(agree) + "/" + str.tostring(mtfNeed), text_color = (not strictMtf or agree >= mtfNeed) ? bull : bear, text_size = size.tiny, text_halign = text.align_right, bgcolor = bg)
+
+    table.cell(thermo, 0, 0, "Price Thermometer: " + str.tostring(thLive, "#.0") + "%  [" + thTag + "]", text_color = tx, text_size = size.tiny, bgcolor = bg)
+    table.merge_cells(thermo, 0, 0, 9, 0)
+    array<color> heats = array.from(color.new(#285AFF, 0), color.new(#00B4DC, 0), color.new(#28C8B4, 0), color.new(#3CC850, 0), color.new(#C8DC28, 0), color.new(#F0C820, 0), color.new(#F08C14, 0), color.new(#F05030, 0), color.new(#E03070, 0), color.new(#D22896, 0))
+    int mark = math.min(9, math.max(0, int(thLive / 10.0)))
+    if thLive >= 100
+        mark := 9
+    for i = 0 to 9
+        table.cell(thermo, i, 1, i == mark ? "▼" : "", text_color = color.white, text_size = size.tiny, text_halign = text.align_center, bgcolor = array.get(heats, i))
+
+alertcondition(buyPulse, "Buy confirmed", "QAI {{ticker}} Buy confirmed @ {{close}}")
+alertcondition(sellPulse, "Sell confirmed", "QAI {{ticker}} Sell confirmed @ {{close}}")
+alertcondition(tbPulse, "Trend Bull", "QAI {{ticker}} Trend Bull @ {{close}}")
+alertcondition(tePulse, "Trend Bear", "QAI {{ticker}} Trend Bear @ {{close}}")
+alertcondition(bosU, "BOS bullish", "QAI {{ticker}} BOS bullish @ {{close}}")
+alertcondition(bosD, "BOS bearish", "QAI {{ticker}} BOS bearish @ {{close}}")
+alertcondition(chU, "CHoCH bullish", "QAI {{ticker}} CHoCH bullish @ {{close}}")
+alertcondition(chD, "CHoCH bearish", "QAI {{ticker}} CHoCH bearish @ {{close}}")
+alertcondition(obBU, "Bullish OB break", "QAI {{ticker}} bullish order block break @ {{close}}")
+alertcondition(obBD, "Bearish OB break", "QAI {{ticker}} bearish order block break @ {{close}}")
+alertcondition(obRU, "Bullish OB retest", "QAI {{ticker}} bullish order block retest @ {{close}}")
+alertcondition(obRD, "Bearish OB retest", "QAI {{ticker}} bearish order block retest @ {{close}}")
+alertcondition(chUp, "Channel breakout up", "QAI {{ticker}} channel breakout up @ {{close}}")
+alertcondition(chDn, "Channel breakdown", "QAI {{ticker}} channel breakdown @ {{close}}")
+alertcondition(resBr, "Resistance break", "QAI {{ticker}} resistance break @ {{close}}")
+alertcondition(supBr, "Support break", "QAI {{ticker}} support break @ {{close}}")
+alertcondition(explPulse, "Volatility explosion", "QAI {{ticker}} volatility explosion @ {{close}}")
+alertcondition(tp1Pulse, "TP1 break-even", "QAI {{ticker}} TP1 hit, stop to break-even @ {{close}}")
+alertcondition(sweepPulse, "Liquidity sweep", "QAI {{ticker}} liquidity sweep @ {{close}}")
+alertcondition(sweepRes, "Sweep plus resonance", "QAI {{ticker}} liquidity sweep with resonance @ {{close}}")
+alertcondition(falsePulse, "False breakout", "QAI {{ticker}} false breakout @ {{close}}")
+alertcondition(revPulse, "Reversal phase", "QAI {{ticker}} reversal phase @ {{close}}")
